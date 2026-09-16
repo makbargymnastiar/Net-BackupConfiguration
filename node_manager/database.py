@@ -236,7 +236,7 @@ def ensure_csv_synced() -> bool:
         current_csv_nodes = []
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
+                reader = csv.DictReader(f, delimiter=';')
                 current_csv_nodes = list(reader)
 
         # Get nodes from database
@@ -270,7 +270,7 @@ def _write_csv_from_db(nodes: List[Dict[str, Any]]):
     os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
     with open(CONFIG_FILE, "w", newline="", encoding="utf-8") as f:
         fieldnames = ["name", "ip", "model", "protocol", "port", "username", "password"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=';')
         writer.writeheader()
         for node in nodes:
             writer.writerow(

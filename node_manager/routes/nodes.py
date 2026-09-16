@@ -52,7 +52,7 @@ def write_nodes_csv(nodes):
     os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
     with open(CONFIG_FILE, "w", newline="", encoding="utf-8") as f:
         fieldnames = ["name", "ip", "model", "protocol", "port", "username", "password", "group"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=';')
         writer.writeheader()
         for node in nodes:
             model_id = node.get("model", "")

@@ -541,7 +541,7 @@ const translations = {
         'deselect_all': 'Deselect All',
         'diff_toggle_all': 'Show: All',
         'close': 'Close',
-        'node_search': '搜索节点...',
+        'node_search': 'Search nodes...',
         'grp_all': 'All Groups',
         'select_device_model': 'Select device model',
         'optional_description': 'Optional description',

@@ -1,0 +1,54 @@
+services:
+  oxidized:
+    image: oxidized/oxidized:latest
+    container_name: oxidized
+    restart: unless-stopped
+
+    environment:
+      TZ: Asia/Jakarta
+
+    ports:
+      - "8888:8888"
+
+    volumes:
+      - ./oxidized-config:/home/oxidized/.config/oxidized
+
+    networks:
+      - network-backup
+
+
+  node-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: oxidized-node-manager
+    restart: unless-stopped
+
+    depends_on:
+      - oxidized
+
+    environment:
+      TZ: Asia/Jakarta
+      FLASK_ENV: production
+
+      OXIDIZED_API_URL: http://oxidized:8888
+      OXIDIZED_USER: admin
+      OXIDIZED_PASSWORD: admin
+
+      DATABASE_PATH: /oxidized_config/nodes.db
+      CONFIG_FILE: /oxidized_config/nodes.csv
+
+    ports:
+      - "8080:5000"
+
+    volumes:
+      - ./oxidized-config:/oxidized_config
+
+    networks:
+      - network-backup
+
+
+networks:
+  network-backup:
+    driver: bridge
