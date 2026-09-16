@@ -53,5 +53,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# Local databases
+*.db
+
 # Oxidized credentials - contains sensitive data, never track
 oxidized-config/credentials.json
