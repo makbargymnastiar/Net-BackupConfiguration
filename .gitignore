@@ -58,3 +58,11 @@ __pycache__/
 
 # Oxidized credentials - contains sensitive data, never track
 oxidized-config/credentials.json
+
+# Oxidized runtime files
+oxidized-config/crash
+oxidized-config/logs/
+oxidized-config/pid
+oxidized-config/nodes.csv.before-rebuild
+oxidized-config/nodes.db.before-rebuild
+
