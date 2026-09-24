@@ -59,21 +59,20 @@ function updateUI() {
 
   // Nodes table headers
   if (document.getElementById("th-name"))
-    document.getElementById("th-name").textContent = t("node_name");
-  if (document.getElementById("th-ip"))
-    document.getElementById("th-ip").textContent = t("ip_address");
+    document.getElementById("th-name").textContent = t("device") || "Device";
   if (document.getElementById("th-model"))
-    document.getElementById("th-model").textContent = t("device_model");
-  if (document.getElementById("th-protocol"))
-    document.getElementById("th-protocol").textContent = t("protocol");
-  if (document.getElementById("th-port"))
-    document.getElementById("th-port").textContent = t("port");
+    document.getElementById("th-model").textContent =
+      t("device_model") || "Model";
+  if (document.getElementById("th-connection"))
+    document.getElementById("th-connection").textContent =
+      t("connection") || "Connection";
   if (document.getElementById("th-group"))
     document.getElementById("th-group").textContent = t("group");
   if (document.getElementById("th-oxidized-status"))
     document.getElementById("th-oxidized-status").textContent = t("status");
   if (document.getElementById("th-oxidized-last"))
-    document.getElementById("th-oxidized-last").textContent = t("last_backup");
+    document.getElementById("th-oxidized-last").textContent =
+      t("latest_backup") || "Latest Backup";
   if (document.getElementById("th-action"))
     document.getElementById("th-action").textContent = t("action");
 
@@ -264,6 +263,71 @@ function toggleSidebarDropdown(key, ev) {
   if (toggleBtn) toggleBtn.classList.toggle("open", isOpen);
 }
 
+// ============ Row action overflow menu (Device table "[ Backup ]  ⋮") ============
+// Menus are portaled to <body> with position:fixed while open, so they are
+// never clipped by a scrolling/overflow table container. closeAllActionMenus()
+// returns any open menu to its original row before a table re-render, so a
+// re-render never leaves an orphaned menu floating on screen.
+let openActionMenu = null;
+
+function closeAllActionMenus() {
+  document.querySelectorAll(".action-menu.open").forEach((menu) => {
+    menu.classList.remove("open");
+    if (menu._homeParent) {
+      menu._homeParent.appendChild(menu);
+      menu.style.position = "";
+      menu.style.top = "";
+      menu.style.left = "";
+      menu._homeParent = null;
+    }
+  });
+  openActionMenu = null;
+}
+
+function toggleActionMenu(btn, ev) {
+  if (ev) ev.stopPropagation();
+  const wrap = btn.closest(".action-menu-wrap");
+  const menu = wrap ? wrap.querySelector(".action-menu") : null;
+  if (!menu) return;
+  const wasOpen = menu.classList.contains("open");
+  closeAllActionMenus();
+  if (wasOpen) return;
+
+  const rect = btn.getBoundingClientRect();
+  menu._homeParent = wrap;
+  document.body.appendChild(menu);
+  menu.style.position = "fixed";
+  menu.classList.add("open");
+
+  const menuWidth = menu.offsetWidth || 180;
+  const menuHeight = menu.offsetHeight || 0;
+  let left = rect.right - menuWidth;
+  if (left < 8) left = 8;
+  let top = rect.bottom + 4;
+  if (top + menuHeight > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - menuHeight - 4);
+  }
+  menu.style.left = left + "px";
+  menu.style.top = top + "px";
+  openActionMenu = menu;
+}
+
+document.addEventListener("click", (e) => {
+  if (openActionMenu && !openActionMenu.contains(e.target)) {
+    closeAllActionMenus();
+  }
+});
+document.addEventListener(
+  "scroll",
+  () => {
+    if (openActionMenu) closeAllActionMenus();
+  },
+  true,
+);
+window.addEventListener("resize", () => {
+  if (openActionMenu) closeAllActionMenus();
+});
+
 // ============ Logout ============
 function logout() {
   if (confirm(t("confirm_logout") || "Are you sure to logout?")) {
@@ -370,6 +434,50 @@ function getOxidizedLastSync(status) {
   }
 }
 
+const MONTH_ABBR_EN = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+// "Latest Backup" column: "24 Sep 2026, 09:23" — no seconds, no timezone noise.
+function formatLatestBackupDate(status) {
+  if (!status || !status.last || !status.last.end) return "Never";
+  const d = new Date(status.last.end);
+  if (isNaN(d.getTime())) return "Never";
+  const day = d.getDate();
+  const month = MONTH_ABBR_EN[d.getMonth()];
+  const year = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${day} ${month} ${year}, ${hh}:${mm}`;
+}
+
+// "Status" column: just the backup result, no timestamp (that now lives only
+// in the separate "Latest Backup" column).
+function getOxidizedStatusOnly(nodeName) {
+  const status = oxidizedStatus[nodeName];
+  if (!status) {
+    return '<span class="status-text status-muted">Not in Oxidized</span>';
+  }
+  if (status.status === "success") {
+    return '<span class="status-text status-success">&#10003; Success</span>';
+  }
+  if (status.status === "failed") {
+    return '<span class="status-text status-failed">&#10007; Failed</span>';
+  }
+  return `<span class="status-text status-pending">&#8987; ${escapeHtml(status.status || "Unknown")}</span>`;
+}
+
 function getOxidizedStatusBadge(nodeName) {
   const status = oxidizedStatus[nodeName];
   if (!status) {
@@ -413,36 +521,52 @@ function getModelDisplayName(modelId) {
 }
 
 function renderNodeRow(node) {
+  const groupCell = node.group_name
+    ? `<span class="group-badge">${escapeHtml(node.group_name)}</span>`
+    : '<span class="cell-muted">-</span>';
+
   return `
         <tr>
-            <td>${escapeHtml(node.name)}</td>
-            <td>${escapeHtml(node.ip)}</td>
-            <td>${escapeHtml(getModelDisplayName(node.model))}</td>
-            <td>${escapeHtml(node.protocol || "-")}</td>
-            <td>${node.port || "-"}</td>
-            <td>${node.group_name ? '<span style="background:#e3f2fd;padding:2px 8px;border-radius:12px;font-size:12px;">' + escapeHtml(node.group_name) + "</span>" : '<span style="color:#999;">-</span>'}</td>
-            <td>${getOxidizedStatusBadge(node.name)}</td>
-            <td>${getOxidizedLastSync(oxidizedStatus[node.name]) || "-"}</td>
             <td>
-                <div class="action-btn-group">
-                    <button class="action-btn action-btn-edit" onclick="openEditModal('${escapeHtml(node.name)}')" title="Edit">
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
-                    </button>
-                    <button class="action-btn action-btn-view" onclick="viewConfig('${escapeHtml(node.name)}')" title="View Config">
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-                    </button>
-                    <button class="action-btn action-btn-history" onclick="viewVersionHistory('${escapeHtml(node.name)}')" title="Version History">
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
-                    </button>
-                    <button class="action-btn action-btn-backup" onclick="triggerBackup('${escapeHtml(node.name)}')" title="Trigger Backup">
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
-                    </button>
-                    <button class="action-btn action-btn-schedule" onclick="openDeviceOrGroupSchedule('node', '${escapeHtml(node.name)}')" title="Schedule Backup">
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 10.59V6h-2v7.41l4.71 4.71 1.42-1.42z"/></svg>
-                    </button>
-                    <button class="action-btn action-btn-delete" onclick="deleteNode('${escapeHtml(node.name)}')" title="Delete">
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                    </button>
+                <div class="device-cell">
+                    <div class="device-name">${escapeHtml(node.name)}</div>
+                    <div class="device-ip">${escapeHtml(node.ip)}</div>
+                </div>
+            </td>
+            <td>${escapeHtml(getModelDisplayName(node.model))}</td>
+            <td class="connection-cell">${escapeHtml(node.protocol || "-")} &middot; ${node.port || "-"}</td>
+            <td>${groupCell}</td>
+            <td>${getOxidizedStatusOnly(node.name)}</td>
+            <td>${formatLatestBackupDate(oxidizedStatus[node.name])}</td>
+            <td>
+                <div class="row-actions">
+                    <button class="btn btn-row-primary" onclick="triggerBackup('${escapeHtml(node.name)}')" title="Trigger Backup">Backup</button>
+                    <div class="action-menu-wrap">
+                        <button class="action-menu-toggle" onclick="toggleActionMenu(this, event)" title="More actions" aria-label="More actions">&#8942;</button>
+                        <div class="action-menu">
+                            <button onclick="closeAllActionMenus(); openEditModal('${escapeHtml(node.name)}')">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                                <span>Edit</span>
+                            </button>
+                            <button onclick="closeAllActionMenus(); viewConfig('${escapeHtml(node.name)}')">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                                <span>Load Config</span>
+                            </button>
+                            <button onclick="closeAllActionMenus(); viewVersionHistory('${escapeHtml(node.name)}')">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+                                <span>History</span>
+                            </button>
+                            <button onclick="closeAllActionMenus(); openDeviceOrGroupSchedule('node', '${escapeHtml(node.name)}')">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 10.59V6h-2v7.41l4.71 4.71 1.42-1.42z"/></svg>
+                                <span>Schedule Backup</span>
+                            </button>
+                            <div class="action-menu-separator"></div>
+                            <button class="action-menu-danger" onclick="closeAllActionMenus(); deleteNode('${escapeHtml(node.name)}')">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                                <span>Delete</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </td>
         </tr>
@@ -450,17 +574,19 @@ function renderNodeRow(node) {
 }
 
 function renderNodesTable(nodes) {
+  closeAllActionMenus();
   const tbody = document.getElementById("nodesList");
   if (nodes.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;">No matching nodes</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No matching nodes</td></tr>`;
     return;
   }
   tbody.innerHTML = nodes.map(renderNodeRow).join("");
 }
 
 function refreshNodes() {
+  closeAllActionMenus();
   document.getElementById("nodesList").innerHTML =
-    `<tr><td colspan="9" style="text-align:center;">${t("loading")}</td></tr>`;
+    `<tr><td colspan="7" style="text-align:center;">${t("loading")}</td></tr>`;
   fetch("/api/nodes")
     .then((r) => r.json())
     .then((nodes) => {
@@ -553,14 +679,30 @@ function viewVersionHistory(nodeName) {
           .map((v, idx) => {
             // Convert ISO date string "2026-04-21 07:25:45 +0000" to Unix epoch seconds
             const dateStr = v.time || v.date || "";
-            const epochSecs = dateStr
-              ? Math.round(new Date(dateStr).getTime() / 1000)
-              : 0;
+            const parsed = dateStr ? new Date(dateStr) : null;
+            const epochSecs =
+              parsed && !isNaN(parsed.getTime())
+                ? Math.round(parsed.getTime() / 1000)
+                : 0;
+            const num = data.length - idx;
+            let dateLine = "Unknown date";
+            let timeLine = "";
+            if (parsed && !isNaN(parsed.getTime())) {
+              dateLine = parsed.toLocaleDateString("id-ID", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              });
+              timeLine = `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
+            }
             return `
-                <div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 8px; flex-wrap: nowrap;">
-                    <input type="checkbox" class="version-checkbox" data-oid="${v.oid}" data-epoch="${epochSecs}" data-num="${data.length - idx}" style="margin: 0; width: 16px; flex-shrink: 0;">
-                    <div style="flex: 1; min-width: 0;">
-                        <div style="font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Version ${data.length - idx} - ${v.date || v.timestamp || "Unknown date"}</div>
+                <div class="backup-history-item">
+                    <input type="checkbox" class="version-checkbox" data-oid="${v.oid}" data-epoch="${epochSecs}" data-num="${num}">
+                    <div class="backup-history-text">
+                        <div class="backup-history-title">Data Backup #${num}</div>
+                        <div class="backup-history-date">${escapeHtml(dateLine)}</div>
+                        ${timeLine ? `<div class="backup-history-time">${escapeHtml(timeLine)}</div>` : ""}
                     </div>
                     <button class="btn" style="padding:5px 10px;font-size:11px; flex-shrink: 0;" onclick="viewVersionDetail('${nodeName}', '${v.oid}', '${epochSecs}')">View</button>
                 </div>
@@ -1607,6 +1749,7 @@ function loadGroups() {
 
 // Renders each group as its own card, with a table of the devices assigned to it
 function renderGroupsWithNodes(groups, nodes) {
+  closeAllActionMenus();
   const container = document.getElementById("groups-sections");
   if (!container) return;
 
@@ -1642,14 +1785,12 @@ function renderGroupsWithNodes(groups, nodes) {
             <table>
                 <thead>
                     <tr>
-                        <th>${t("node_name") || "Node Name"}</th>
-                        <th>${t("ip_address") || "IP Address"}</th>
-                        <th>${t("device_model") || "Device Model"}</th>
-                        <th>${t("protocol") || "Protocol"}</th>
-                        <th>${t("port") || "Port"}</th>
+                        <th>${t("device") || "Device"}</th>
+                        <th>${t("device_model") || "Model"}</th>
+                        <th>${t("connection") || "Connection"}</th>
                         <th>${t("group") || "Group"}</th>
-                        <th>${t("Status") || "Backup Status"}</th>
-                        <th>${t("last_backup") || "Last Backup"}</th>
+                        <th>${t("Status") || "Status"}</th>
+                        <th>${t("latest_backup") || "Latest Backup"}</th>
                         <th>${t("action") || "Action"}</th>
                     </tr>
                 </thead>
