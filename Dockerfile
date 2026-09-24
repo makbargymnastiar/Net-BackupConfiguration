@@ -8,7 +8,8 @@ RUN pip install --no-cache-dir \
     flask \
     flask-bcrypt \
     requests \
-    pyyaml
+    pyyaml \
+    docker
 
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_ENV=production

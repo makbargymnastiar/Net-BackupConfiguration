@@ -103,11 +103,16 @@ def get_oxidized_version_config(node_name, oid, epoch=None):
     timestamp-based lookup using the epoch parameter.
     """
     import docker
-    import sys
-    print(f"DEBUG: get_oxidized_version_config called with node={node_name}, oid={oid}, epoch={epoch}", flush=True)
+
+    print(
+        f"DEBUG: get_oxidized_version_config called with "
+        f"node={node_name}, oid={oid}, epoch={epoch}",
+        flush=True
+    )
+
     try:
         client = docker.from_env()
-        git_dir = "/home/oxidized/.config/oxidized/git"
+        git_dir = "/home/oxidized/.config/oxidized"
         container = client.containers.get("oxidized")
 
         # Helper to run git command and return (exit_code, output)
@@ -115,48 +120,118 @@ def get_oxidized_version_config(node_name, oid, epoch=None):
             result = container.exec_run(
                 ["git", "-C", git_dir, "-c", f"safe.directory={git_dir}"] + args
             )
-            return result.exit_code, result.output.decode("utf-8", errors="replace")
+            return result.exit_code, result.output.decode(
+                "utf-8", errors="replace"
+            )
 
         # Try direct OID lookup first (works when Oxidized cache is fresh)
-        for path_variant in [f"{oid}:{node_name}", f"{oid}:/{node_name}", oid]:
+        for path_variant in [
+            f"{oid}:{node_name}",
+            f"{oid}:/{node_name}",
+            oid
+        ]:
             ec, out = git_exec(["show", path_variant])
             if ec == 0:
-                print(f"DEBUG: Found config via direct OID lookup: oid={path_variant}", flush=True)
+                print(
+                    f"DEBUG: Found config via direct OID lookup: "
+                    f"oid={path_variant}",
+                    flush=True
+                )
                 return out
 
-        # OID not found - Oxidized cache is stale. Use epoch timestamp to find the commit.
+        # OID not found - Oxidized cache is stale.
+        # Use epoch timestamp to find the commit.
         if epoch:
-            print(f"DEBUG: OID {oid} not found in git, falling back to epoch {epoch}", flush=True)
-            # Convert epoch (Unix timestamp seconds) to date string for git
-            # Add 1 second to include commits at exactly the epoch time
-            from datetime import datetime, timezone
-            date_str = datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            # Use git log to find commits at or before this date that touch node_name
-            ec, commit_list = git_exec(
-                ["log", "--until", f"{date_str}",
-                 "--format=%H",
-                 "--name-only", "--", node_name]
+            print(
+                f"DEBUG: OID {oid} not found in git, "
+                f"falling back to epoch {epoch}",
+                flush=True
             )
+
+            # IMPORTANT:
+            # epoch can arrive from Flask request.args as a string.
+            # datetime.fromtimestamp() requires int/float.
+            from datetime import datetime, timezone
+
+            try:
+                epoch = int(epoch)
+            except (TypeError, ValueError):
+                print(
+                    f"ERROR: Invalid epoch value: {epoch}",
+                    flush=True
+                )
+                return None
+
+            date_str = datetime.fromtimestamp(
+                epoch,
+                tz=timezone.utc
+            ).strftime("%Y-%m-%d %H:%M:%S")
+
+            print(
+                f"DEBUG: Searching git history until {date_str}",
+                flush=True
+            )
+
+            # Use git log to find commits at or before this date
+            # that touch node_name.
+            ec, commit_list = git_exec(
+                [
+                    "log",
+                    "--until",
+                    date_str,
+                    "--format=%H",
+                    "--name-only",
+                    "--",
+                    node_name
+                ]
+            )
+
             if ec == 0 and commit_list.strip():
                 lines = commit_list.strip().split("\n")
+
                 if lines:
                     commit_hash = lines[0].strip()
+
                     if commit_hash:
-                        print(f"DEBUG: Found commit {commit_hash} via epoch lookup for {node_name}", flush=True)
-                        ec2, config = git_exec(["show", f"{commit_hash}:{node_name}"])
+                        print(
+                            f"DEBUG: Found commit {commit_hash} "
+                            f"via epoch lookup for {node_name}",
+                            flush=True
+                        )
+
+                        ec2, config = git_exec(
+                            ["show", f"{commit_hash}:{node_name}"]
+                        )
+
                         if ec2 == 0:
                             return config
+
                         # Try with leading slash
-                        ec3, config3 = git_exec(["show", f"{commit_hash}:/{node_name}"])
+                        ec3, config3 = git_exec(
+                            ["show", f"{commit_hash}:/{node_name}"]
+                        )
+
                         if ec3 == 0:
                             return config3
 
-        print(f"ERROR: Git show failed for oid={oid}, node={node_name}", flush=True)
+        print(
+            f"ERROR: Git show failed for oid={oid}, "
+            f"node={node_name}",
+            flush=True
+        )
         return None
+
     except Exception as e:
         import traceback
-        print(f"ERROR: Exception in get_oxidized_version_config: {e}", flush=True)
-        print(f"ERROR: Traceback: {traceback.format_exc()}", flush=True)
+
+        print(
+            f"ERROR: Exception in get_oxidized_version_config: {e}",
+            flush=True
+        )
+        print(
+            f"ERROR: Traceback: {traceback.format_exc()}",
+            flush=True
+        )
         return None
 
 
@@ -179,20 +254,30 @@ def trigger_oxidized_backup(node_name):
 def get_oxidized_info():
     """Get Oxidized global config info."""
     interval = read_oxidized_interval()
-    return {"interval": interval, "interval_display": format_interval(interval)}
+    return {
+        "interval": interval,
+        "interval_display": format_interval(interval)
+    }
 
 
 def read_oxidized_interval():
     """Read interval from Oxidized config file (in seconds)."""
     try:
         if os.path.exists(OXIDIZED_CONFIG_FILE):
-            with open(OXIDIZED_CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(
+                OXIDIZED_CONFIG_FILE,
+                "r",
+                encoding="utf-8"
+            ) as f:
                 content = f.read()
+
                 for line in content.splitlines():
                     if line.startswith("interval:"):
                         value = line.split(":", 1)[1].strip()
                         return int(value)
-        return 3600  # Default 1 hour
+
+        return 3600
+
     except Exception as e:
         print(f"Error reading Oxidized interval: {e}")
         return 3600
@@ -203,15 +288,27 @@ def write_oxidized_interval(seconds):
     try:
         if not os.path.exists(OXIDIZED_CONFIG_FILE):
             return False
-        with open(OXIDIZED_CONFIG_FILE, "r", encoding="utf-8") as f:
+
+        with open(
+            OXIDIZED_CONFIG_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
             lines = f.readlines()
-        with open(OXIDIZED_CONFIG_FILE, "w", encoding="utf-8") as f:
+
+        with open(
+            OXIDIZED_CONFIG_FILE,
+            "w",
+            encoding="utf-8"
+        ) as f:
             for line in lines:
                 if line.startswith("interval:"):
                     f.write(f"interval: {seconds}\n")
                 else:
                     f.write(line)
+
         return True
+
     except Exception as e:
         print(f"Error writing Oxidized interval: {e}")
         return False
@@ -222,9 +319,11 @@ def format_interval(seconds):
     if seconds >= 3600:
         hours = seconds // 3600
         return f"{hours} hour{'s' if hours > 1 else ''}"
+
     elif seconds >= 60:
         minutes = seconds // 60
         return f"{minutes} minute{'s' if minutes > 1 else ''}"
+
     else:
         return f"{seconds} seconds"
 
@@ -238,6 +337,7 @@ def reload_oxidized_config():
             timeout=5
         )
         return response.status_code == 200
+
     except Exception as e:
         print(f"Warning: Failed to reload Oxidized config: {e}")
         return False

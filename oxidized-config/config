@@ -29,8 +29,8 @@ output:
 source:
   default: csv
   csv:
-    file: "/home/oxidized/.config/nodes.csv"
-    delimiter: !ruby/regexp /,/
+    file: "/home/oxidized/.config/oxidized/nodes.csv"
+    delimiter: !ruby/regexp /;/
     header: true
     map:
       name: 0

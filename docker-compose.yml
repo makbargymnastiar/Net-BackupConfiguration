@@ -44,6 +44,7 @@ services:
 
     volumes:
       - ./oxidized-config:/oxidized_config
+      - /var/run/docker.sock:/var/run/docker.sock
 
     networks:
       - network-backup
