@@ -44,6 +44,7 @@ def credentials_list():
                     "password": _decode_password(c.get("password", "")),
                     "enable_password": _decode_password(c.get("enable_password", "")),
                     "description": c.get("description", ""),
+                    "enabled": c.get("enabled", True),
                 }
             )
         return jsonify(result)
@@ -70,6 +71,7 @@ def credentials_list():
             "password": _encode_password(data.get("password", "")),
             "enable_password": _encode_password(data.get("enable_password", "")),
             "description": data.get("description", ""),
+            "enabled": data.get("enabled", True),
         }
     )
     _save_credentials(creds)
@@ -112,6 +114,7 @@ def credentials_detail(cred_id):
                 "password": _encode_password(data.get("password", "")),
                 "enable_password": _encode_password(data.get("enable_password", "")),
                 "description": data.get("description", creds[idx].get("description", "")),
+                "enabled": data.get("enabled", creds[idx].get("enabled", True)),
             }
             _save_credentials(creds)
             return jsonify({"success": True})
@@ -125,3 +128,29 @@ def credentials_detail(cred_id):
         creds = [c for c in creds if c["id"] != cred_id]
         _save_credentials(creds)
         return jsonify({"success": True})
+
+
+@credentials_bp.route("/api/credentials-enabled", methods=["PUT"])
+@login_required
+def credentials_enabled():
+    """Persist which credentials are enabled (admin only).
+
+    Body: {"enabled": [id, ...]}. Any credential whose id is not in the list is
+    marked disabled. Only the `enabled` flag is touched - other fields
+    (passwords, label, ...) are left untouched.
+    """
+    current_user = User.get_by_username(session.get("username"))
+    if not current_user or current_user.role != "admin":
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+
+    data = request.json or {}
+    enabled_ids = data.get("enabled", [])
+    if not isinstance(enabled_ids, list):
+        enabled_ids = []
+    enabled_set = set(enabled_ids)
+
+    creds = _load_credentials()
+    for c in creds:
+        c["enabled"] = c["id"] in enabled_set
+    _save_credentials(creds)
+    return jsonify({"success": True})

@@ -1,14 +1,44 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8a 100%);
+    /* Deep multi-tone backdrop with soft glows; the device line art from
+       login.html (svg.login-bg) is layered on top of this. */
+    background:
+        radial-gradient(900px 500px at 15% 10%, rgba(0, 212, 170, 0.10), transparent 60%),
+        radial-gradient(1000px 600px at 85% 85%, rgba(45, 90, 138, 0.35), transparent 60%),
+        linear-gradient(150deg, #0c1c30 0%, #16324f 45%, #1d4568 75%, #235276 100%);
     min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
     padding: 20px;
+    position: relative;
+    overflow: hidden;
+}
+/* Full-viewport decorative network backdrop behind the card. */
+.login-bg {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+}
+.login-bg .bg-devices {
+    stroke: #9fc3e8;
+    opacity: 0.16;
+}
+.login-bg .bg-links {
+    stroke: #9fc3e8;
+    opacity: 0.12;
+}
+.login-bg .bg-link-dots {
+    fill: #9fc3e8;
+    opacity: 0.25;
 }
 .login-container {
+    position: relative;
+    z-index: 1;
     background: white;
     border-radius: 12px;
     padding: 40px;
@@ -78,31 +108,6 @@ input:focus {
     color: #721c24;
     border: 1px solid #f5c6cb;
 }
-.lang-switch {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    background: #f59e0b;
-    color: #1a1a2e;
-    border: 2px solid #d97706;
-    padding: 6px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    display: inline-flex !important;
-    align-items: center;
-    gap: 6px;
-    line-height: 1.2;
-    width: auto !important;
-    box-sizing: border-box !important;
-}
-.lang-switch:hover {
-    background: #fbbf24;
-}
-.lang-switch .globe-icon {
-    color: #1a1a2e;
-}
 .password-input-group {
     position: relative;
     display: flex;
@@ -132,6 +137,14 @@ input:focus {
     font-size: 18px;
     padding: 5px;
     z-index: 10;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+/* The eye toggle is an inline SVG now (the 👁️ emoji rendered unevenly). */
+.password-toggle svg {
+    width: 18px;
+    height: 18px;
 }
 .password-toggle:hover {
     color: #333;

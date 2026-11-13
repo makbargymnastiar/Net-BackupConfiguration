@@ -24,6 +24,7 @@ from models.user import User
 # Import new route blueprints
 from routes import nodes_bp, auth_bp, oxidized_api_bp, config_bp, credentials_bp, models_bp
 from routes.groups_api import groups_bp
+from routes.activity_log_api import activity_log_bp
 from routes.pages import pages_bp
 from routes.nodes import set_config as set_nodes_config
 
@@ -34,16 +35,16 @@ app = Flask(__name__)
 from routes.oxidized_api import set_config as set_oxidized_api_config
 import services.oxidized_service as oxidized_service
 import services.docker_service as docker_service
+import services.activity_log_service as activity_log_service
 
 app.secret_key = os.getenv("SECRET_KEY", "oxidized-node-manager-secret-key-2024")
 
 CONFIG_FILE = os.getenv("CONFIG_FILE", "/oxidized_config/nodes.csv")
 OXIDIZED_API_URL = os.getenv("OXIDIZED_API_URL", "http://oxidized:8888")
 OXIDIZED_CONFIG_FILE = "/oxidized_config/config"
-USERS_FILE = "/oxidized_config/users.json"
-USER_STATUS_FILE = "/oxidized_config/user_status.json"
 MODELS_FILE = "/oxidized_config/models.json"
 CREDENTIALS_FILE = "/oxidized_config/credentials.json"
+ACTIVITY_LOG_FILE = os.getenv("ACTIVITY_LOG_FILE", "/oxidized_config/activity_log.txt")
 
 # Initialize database on module load
 init_database()
@@ -55,6 +56,7 @@ ensure_csv_synced()
 set_nodes_config(OXIDIZED_API_URL, CONFIG_FILE)
 # set_auth_config removed - auth now uses User model with SQLite
 set_oxidized_api_config(OXIDIZED_API_URL, OXIDIZED_CONFIG_FILE)
+activity_log_service.set_config(ACTIVITY_LOG_FILE)
 # Load Oxidized API token from database
 OXIDIZED_API_TOKEN = get_config_setting("oxidized_api_token", "")
 oxidized_service.set_config(OXIDIZED_API_URL, OXIDIZED_CONFIG_FILE, OXIDIZED_API_TOKEN)
@@ -68,6 +70,7 @@ app.register_blueprint(config_bp)
 app.register_blueprint(models_bp)
 app.register_blueprint(groups_bp)
 app.register_blueprint(credentials_bp)
+app.register_blueprint(activity_log_bp)
 app.register_blueprint(pages_bp)
 
 # Initialize config versions
@@ -76,14 +79,14 @@ init_config_versions()
 
 
 def encode_password(pwd):
-    """Base64 编码密码"""
+    """Encode password to Base64"""
     if not pwd:
         return ""
     return base64.b64encode(pwd.encode()).decode()
 
 
 def decode_password(encoded):
-    """Base64 解码密码"""
+    """Decode password from Base64"""
     if not encoded:
         return ""
     try:
@@ -92,7 +95,7 @@ def decode_password(encoded):
         return ""
 
 
-# 所有支持的 Oxidized Models
+# All supported Oxidized Models
 ALL_MODELS = {
     "ios": "Cisco IOS",
     "iosxe": "Cisco IOS-XE",
@@ -175,14 +178,14 @@ ALL_MODELS = {
 
 
 def load_enabled_models():
-    """加载已启用的模型列表"""
+    """Load the list of enabled models"""
     if os.path.exists(MODELS_FILE):
         try:
             with open(MODELS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except:
             pass
-    # 默认返回常用模型
+    # Default to commonly used models
     return [
         "ios",
         "iosxe",
@@ -198,110 +201,60 @@ def load_enabled_models():
 
 
 def save_enabled_models(models):
-    """保存启用的模型列表"""
+    """Save the list of enabled models"""
     os.makedirs(os.path.dirname(MODELS_FILE), exist_ok=True)
     with open(MODELS_FILE, "w", encoding="utf-8") as f:
         json.dump(models, f, indent=2)
 
 
-# 默认凭证配置
+# Default credentials
 DEFAULT_CREDENTIALS = [
     {
         "id": "huawei-admin",
-        "label": "华为管理员",
+        "label": "Huawei Admin",
         "username": "admin",
         "password": encode_password("Admin@123"),
         "enable_password": encode_password("Admin@123"),
-        "description": "华为设备标准管理员账号",
+        "description": "Huawei device standard admin account",
+        "enabled": True,
     },
     {
         "id": "cisco-admin",
-        "label": "Cisco 管理员",
+        "label": "Cisco Admin",
         "username": "admin",
         "password": encode_password("cisco123"),
         "enable_password": encode_password("cisco123"),
-        "description": "Cisco 设备标准管理员账号",
+        "description": "Cisco device standard admin account",
+        "enabled": True,
     },
 ]
 
 
 def load_credentials():
-    """加载凭证列表"""
+    """Load the credentials list"""
     if os.path.exists(CREDENTIALS_FILE):
         try:
             with open(CREDENTIALS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except:
             pass
-    # 返回默认凭证
+    # Return default credentials
     return DEFAULT_CREDENTIALS.copy()
 
 
 def save_credentials(credentials):
-    """保存凭证列表"""
+    """Save the credentials list"""
     os.makedirs(os.path.dirname(CREDENTIALS_FILE), exist_ok=True)
     with open(CREDENTIALS_FILE, "w", encoding="utf-8") as f:
         json.dump(credentials, f, indent=2)
 
 
-# 默认用户配置（初始密码）
-DEFAULT_USERS = {"admin": "admin123", "user": "user123"}
-
-
-def load_users():
-    """从配置文件加载用户"""
-    if os.path.exists(USERS_FILE):
-        try:
-            with open(USERS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return DEFAULT_USERS.copy()
-    else:
-        os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(DEFAULT_USERS.copy(), f, indent=2)
-        return DEFAULT_USERS.copy()
-
-
-def save_users(users):
-    """保存用户配置"""
-    os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, indent=2)
-
-
-def load_user_status():
-    """加载用户状态（是否已修改默认密码）"""
-    if os.path.exists(USER_STATUS_FILE):
-        try:
-            with open(USER_STATUS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
-
-
-def save_user_status(status):
-    """保存用户状态"""
-    os.makedirs(os.path.dirname(USER_STATUS_FILE), exist_ok=True)
-    with open(USER_STATUS_FILE, "w", encoding="utf-8") as f:
-        json.dump(status, f, indent=2)
-
-
-def is_user_password_changed(username):
-    """检查用户是否已修改密码"""
-    status = load_user_status()
-    return status.get(username, {}).get("password_changed", False)
-
-
-def mark_password_as_changed(username):
-    """标记用户已修改密码"""
-    status = load_user_status()
-    if username not in status:
-        status[username] = {}
-    status[username]["password_changed"] = True
-    status[username]["changed_at"] = datetime.now().isoformat()
-    save_user_status(status)
+# Default user configuration (initial passwords)
+# NOTE: the legacy plaintext users.json helpers (load_users/save_users) and the
+# user_status.json "password changed" flag file were both removed. Credentials
+# live bcrypt-hashed in the SQLite users table, and the first-login change
+# requirement is tracked by the users.must_change_password column, which
+# pages.is_user_password_changed reads directly. No file-based user state remains.
 
 
 # [REFACTORED] Page routes moved to pages_bp (routes/pages.py)
@@ -398,9 +351,17 @@ from services.oxidized_service import (
 )
 
 if __name__ == "__main__":
-    # Run one-time migration from CSV to database on startup
     print(f"Database path: {get_db_path()}")
+    
+    # Jalankan migration
     print("Checking for CSV to database migration...")
     migrate_csv_to_database()
+
     print("Starting Oxidized Node Manager...")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True,
+        use_reloader=True
+    )

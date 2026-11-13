@@ -59,6 +59,10 @@ __pycache__/
 # Oxidized credentials - contains sensitive data, never track
 oxidized-config/credentials.json
 
+# Legacy runtime user store - plaintext passwords, regenerated at boot, never track
+oxidized-config/users.json
+oxidized-config/user_status.json
+
 # Oxidized runtime files
 oxidized-config/crash
 oxidized-config/logs/

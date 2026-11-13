@@ -1,4 +1,4 @@
-// Dashboard JavaScript - Uses shared i18n.js for translations
+// Dashboard JavaScript - English-only UI (no translation layer).
 
 // ============ Global State ============
 let oxidizedStatus = {};
@@ -15,193 +15,266 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function showAlert(message, type = "success") {
-  const alert = document.getElementById("alert");
-  alert.className = `alert ${type}`;
-  alert.textContent = message;
-  alert.style.display = "block";
-  setTimeout(() => (alert.style.display = "none"), 5000);
+// NOTE: The old top-of-page showAlert() banner has been removed. All
+// notifications now use showInfoToast() (bottom pop-up) so feedback is
+// consistent and never shifts the page layout.
+
+// Non-blocking inline confirmation toast. Replaces the native browser
+// confirm() popup for lightweight actions (triggering a backup, restarting
+// Oxidized, deleting groups): a small bar slides up at the bottom with
+// Confirm / Cancel and auto-dismisses.
+// True while a blocking confirmation (e.g. delete device/group) is on screen,
+// so lightweight info toasts never clobber the shared #confirm-toast host and
+// orphan the click-blocking backdrop.
+let blockingConfirmOpen = false;
+
+function confirmAction(message, onConfirm, opts) {
+  opts = opts || {};
+  let host = document.getElementById("confirm-toast");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "confirm-toast";
+    host.className = "confirm-toast";
+    document.body.appendChild(host);
+  }
+  // Cancel any pending info-toast auto-hide so it can't dismiss this dialog.
+  clearTimeout(host._infoTimer);
+  // A blocking confirmation (e.g. deleting a device/group) dims the page with a
+  // backdrop and stays until the user explicitly picks Confirm or Cancel —
+  // nothing else on screen is clickable meanwhile.
+  let backdrop = null;
+  if (opts.blocking) {
+    backdrop = document.getElementById("confirm-backdrop");
+    if (!backdrop) {
+      backdrop = document.createElement("div");
+      backdrop.id = "confirm-backdrop";
+      backdrop.className = "confirm-backdrop";
+      document.body.appendChild(backdrop);
+    }
+    backdrop.classList.add("show");
+    blockingConfirmOpen = true;
+  }
+  host.innerHTML =
+    `<span class="confirm-toast-msg">${escapeHtml(message)}</span>` +
+    `<span class="confirm-toast-actions">` +
+    `<button type="button" class="btn ${
+      opts.danger ? "btn-danger" : "btn-success"
+    } btn-xs" id="confirm-toast-yes">${
+      opts.confirmLabel || "Confirm" }</button>` +
+    `<button type="button" class="btn btn-xs" id="confirm-toast-no">Cancel</button>` +
+    `</span>`;
+  host.classList.add("show");
+  const hide = () => {
+    host.classList.remove("show");
+    if (backdrop) backdrop.classList.remove("show");
+    blockingConfirmOpen = false;
+  };
+  const timer = opts.blocking ? null : setTimeout(hide, 8000);
+  document.getElementById("confirm-toast-yes").onclick = () => {
+    clearTimeout(timer);
+    hide();
+    onConfirm();
+  };
+  document.getElementById("confirm-toast-no").onclick = () => {
+    clearTimeout(timer);
+    hide();
+  };
+}
+
+// Informational bottom toast: same visual style as the restart confirmation
+// popup, but message-only (no buttons) and auto-dismisses. Used for
+// lightweight feedback such as "Config copied to clipboard".
+function showInfoToast(message, isError) {
+  // Never overwrite a blocking confirmation: the shared #confirm-toast host
+  // would lose its Confirm/Cancel buttons while the click-blocking backdrop
+  // stays up, leaving the page frozen. Skip the toast until it's resolved.
+  if (blockingConfirmOpen) return;
+  let host = document.getElementById("confirm-toast");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "confirm-toast";
+    host.className = "confirm-toast";
+    document.body.appendChild(host);
+  }
+  const icon = isError
+    ? '<svg class="icon confirm-toast-icon confirm-toast-icon-err" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>'
+    : '<svg class="icon confirm-toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
+  host.innerHTML =
+    icon + `<span class="confirm-toast-msg">${escapeHtml(message)}</span>`;
+  host.classList.add("show");
+  clearTimeout(host._infoTimer);
+  host._infoTimer = setTimeout(() => host.classList.remove("show"), 3000);
 }
 
 // ============ UI Update ============
 function updateUI() {
   // Global UI texts
   if (document.getElementById("page-title"))
-    document.getElementById("page-title").textContent = t("title");
+    document.getElementById("page-title").textContent = "Oxidized";
   if (document.getElementById("title"))
-    document.getElementById("title").textContent = t("title");
+    document.getElementById("title").textContent = "Oxidized";
   if (document.getElementById("subtitle"))
-    document.getElementById("subtitle").textContent = t("subtitle");
-  const langText = document.querySelector("#langBtn .lang-text");
-  if (langText) langText.textContent = t("lang_switch");
-  const logoutBtn = document.getElementById("logout-btn");
-  if (logoutBtn) logoutBtn.textContent = t("logout_btn");
+    document.getElementById("subtitle").textContent = "Manage and monitor network device backup configurations in real-time";
+  // Logout now lives in the sidebar user block; only touch its text span
+  // so the icon markup inside the button is never destroyed.
+  const logoutLabel = document.querySelector("#logout-btn span");
+  if (logoutLabel) logoutLabel.textContent = "Logout";
 
   // Tabs
   if (document.getElementById("tab-nodes-label"))
-    document.getElementById("tab-nodes-label").textContent = t("tab_nodes");
+    document.getElementById("tab-nodes-label").textContent = "Device";
   if (document.getElementById("tab-add-node-label"))
     document.getElementById("tab-add-node-label").textContent =
-      t("tab_add_node");
-  if (document.getElementById("tab-groups-label"))
-    document.getElementById("tab-groups-label").textContent = t("tab_groups");
+      "Add Device";
   if (document.getElementById("tab-import-label"))
-    document.getElementById("tab-import-label").textContent = t("tab_import");
+    document.getElementById("tab-import-label").textContent = "Import";
   if (document.getElementById("tab-users-label"))
-    document.getElementById("tab-users-label").textContent = t("tab_users");
+    document.getElementById("tab-users-label").textContent = "Users";
   if (document.getElementById("tab-credentials-label"))
     document.getElementById("tab-credentials-label").textContent =
-      t("tab_credentials");
+      "Credentials";
   if (document.getElementById("tab-models-label"))
-    document.getElementById("tab-models-label").textContent = t("tab_models");
+    document.getElementById("tab-models-label").textContent = "Models";
   if (document.getElementById("tab-config-label"))
-    document.getElementById("tab-config-label").textContent = t("tab_config");
+    document.getElementById("tab-config-label").textContent = "Settings";
 
   // Nodes table headers
   if (document.getElementById("th-name"))
-    document.getElementById("th-name").textContent = t("device") || "Device";
+    document.getElementById("th-name").textContent = "Device";
   if (document.getElementById("th-model"))
     document.getElementById("th-model").textContent =
-      t("device_model") || "Model";
+      "Device Model";
   if (document.getElementById("th-connection"))
     document.getElementById("th-connection").textContent =
-      t("connection") || "Connection";
-  if (document.getElementById("th-group"))
-    document.getElementById("th-group").textContent = t("group");
+      "Connection";
   if (document.getElementById("th-oxidized-status"))
-    document.getElementById("th-oxidized-status").textContent = t("status");
+    document.getElementById("th-oxidized-status").textContent = "Status";
   if (document.getElementById("th-oxidized-last"))
     document.getElementById("th-oxidized-last").textContent =
-      t("latest_backup") || "Latest Backup";
+      "Latest Backup";
   if (document.getElementById("th-action"))
-    document.getElementById("th-action").textContent = t("action");
+    document.getElementById("th-action").textContent = "Action";
 
   // Groups table headers
   if (document.getElementById("th-grp-id"))
-    document.getElementById("th-grp-id").textContent = t("grp_id");
+    document.getElementById("th-grp-id").textContent = "ID";
   if (document.getElementById("th-grp-name"))
-    document.getElementById("th-grp-name").textContent = t("grp_name");
+    document.getElementById("th-grp-name").textContent = "Name";
   if (document.getElementById("th-grp-desc"))
-    document.getElementById("th-grp-desc").textContent = t("grp_description");
+    document.getElementById("th-grp-desc").textContent = "Description";
   if (document.getElementById("th-grp-created"))
-    document.getElementById("th-grp-created").textContent = t("grp_created");
+    document.getElementById("th-grp-created").textContent = "Created";
   if (document.getElementById("th-grp-action"))
-    document.getElementById("th-grp-action").textContent = t("grp_action");
+    document.getElementById("th-grp-action").textContent = "Action";
 
   // Credentials headers
   if (document.getElementById("th-cred-enable"))
-    document.getElementById("th-cred-enable").textContent = t("cred_enable");
+    document.getElementById("th-cred-enable").textContent = "Enable";
   if (document.getElementById("th-cred-label"))
-    document.getElementById("th-cred-label").textContent = t("cred_label");
+    document.getElementById("th-cred-label").textContent = "Label";
   if (document.getElementById("th-cred-username"))
     document.getElementById("th-cred-username").textContent =
-      t("cred_username");
+      "Username";
   if (document.getElementById("th-cred-description"))
     document.getElementById("th-cred-description").textContent =
-      t("cred_description");
+      "Description";
 
   // Version History headers
   if (document.getElementById("th-version-number"))
     document.getElementById("th-version-number").textContent =
-      t("cfg_version_number");
+      "Version";
   if (document.getElementById("th-version-time"))
     document.getElementById("th-version-time").textContent =
-      t("cfg_version_time");
+      "Time";
   if (document.getElementById("th-version-action"))
     document.getElementById("th-version-action").textContent =
-      t("cfg_version_action");
+      "Action";
 
   // Users headers
   if (document.getElementById("th-user-username"))
     document.getElementById("th-user-username").textContent =
-      t("user_username");
+      "Username";
   if (document.getElementById("th-user-created"))
-    document.getElementById("th-user-created").textContent = t("created");
+    document.getElementById("th-user-created").textContent = "Created";
   if (document.getElementById("th-user-action"))
-    document.getElementById("th-user-action").textContent = t("user_action");
+    document.getElementById("th-user-action").textContent = "Action";
 
   // Modals titles and labels (dynamic via JS)
   const groupModalTitle = document.getElementById("group-modal-title");
-  if (groupModalTitle) groupModalTitle.textContent = t("grp_add_title");
+  if (groupModalTitle) groupModalTitle.textContent = "Add Group";
   const editTitle = document.getElementById("edit-title");
   if (editTitle)
-    editTitle.textContent = t("edit_node_title") || editTitle.textContent;
-  const changePwdTitle = document.getElementById("change-pwd-title");
-  if (changePwdTitle) changePwdTitle.textContent = t("change_password");
+    editTitle.textContent = "Edit Node" || editTitle.textContent;
   const addUserTitle = document.getElementById("add-user-title");
-  if (addUserTitle) addUserTitle.textContent = t("add_user_title");
+  if (addUserTitle) addUserTitle.textContent = "Add User";
   const addCredTitle = document.getElementById("add-cred-title");
-  if (addCredTitle) addCredTitle.textContent = t("add_credential_title");
+  if (addCredTitle) addCredTitle.textContent = "Add Credential";
   const editCredTitle = document.getElementById("edit-cred-title");
-  if (editCredTitle) editCredTitle.textContent = t("edit_credential_title");
+  if (editCredTitle) editCredTitle.textContent = "Edit Credential";
   const viewConfigTitle = document.getElementById("view-config-title");
-  if (viewConfigTitle) viewConfigTitle.textContent = t("view_config_title");
+  if (viewConfigTitle) viewConfigTitle.textContent = "View Configuration";
   const versionHistoryTitle = document.getElementById("version-history-title");
   if (versionHistoryTitle)
-    versionHistoryTitle.textContent = t("version_history_title");
+    versionHistoryTitle.textContent = "Version History";
   const diffTitle = document.getElementById("diff-title");
-  if (diffTitle) diffTitle.textContent = t("compare_versions");
+  if (diffTitle) diffTitle.textContent = "Compare Versions";
 
   // Diff legend labels
   if (document.getElementById("diff-old-version-label"))
     document.getElementById("diff-old-version-label").textContent =
-      t("diff_old_version");
+      "Old Version";
   if (document.getElementById("diff-new-version-label"))
     document.getElementById("diff-new-version-label").textContent =
-      t("diff_new_version");
-
-  // Backup interval modal
-  const backupIntervalTitle = document.getElementById("backup-interval-title");
-  if (backupIntervalTitle)
-    backupIntervalTitle.textContent = t("backup_interval_title");
+      "New Version";
 
   // Placeholders and form labels (nodes, credentials, models, etc.)
   const nodeSearch = document.getElementById("nodeSearch");
-  if (nodeSearch) nodeSearch.placeholder = t("node_search");
+  if (nodeSearch) nodeSearch.placeholder = "Search device, group, or IP...";
+  const nodeGroupFilter = document.getElementById("nodeGroupFilter");
+  if (nodeGroupFilter && nodeGroupFilter.firstElementChild)
+    nodeGroupFilter.firstElementChild.textContent = "All Groups";
   const modelSearch = document.getElementById("modelSearch");
-  if (modelSearch) modelSearch.placeholder = t("model_search_placeholder");
+  if (modelSearch) modelSearch.placeholder = "Search models...";
   const credSearch = document.getElementById("credSearch");
-  if (credSearch) credSearch.placeholder = t("cred_search");
+  if (credSearch) credSearch.placeholder = "Search credentials...";
   const csvContent = document.getElementById("csvContent");
-  if (csvContent) csvContent.placeholder = t("csv_placeholder");
+  if (csvContent) csvContent.placeholder = "Paste CSV Content";
   const labelCsv = document.getElementById("label-csv");
-  if (labelCsv) labelCsv.textContent = t("paste_csv_label");
+  if (labelCsv) labelCsv.textContent = "Paste CSV Content";
   const csvFormatLabel = document.getElementById("csv-format-label");
-  if (csvFormatLabel) csvFormatLabel.textContent = t("csv_format_label");
+  if (csvFormatLabel) csvFormatLabel.textContent = "CSV Format:";
   const csvExampleLabel = document.getElementById("csv-example-label");
-  if (csvExampleLabel) csvExampleLabel.textContent = t("csv_example_label");
+  if (csvExampleLabel) csvExampleLabel.textContent = "Example:";
 
   // Node add form labels
   if (document.getElementById("label-name"))
-    document.getElementById("label-name").textContent = t("node_name");
+    document.getElementById("label-name").textContent = "Hostname";
   if (document.getElementById("label-ip"))
-    document.getElementById("label-ip").textContent = t("ip_address");
+    document.getElementById("label-ip").textContent = "IP Address";
   if (document.getElementById("label-model"))
-    document.getElementById("label-model").textContent = t("device_model");
+    document.getElementById("label-model").textContent = "Device Model";
   if (document.getElementById("label-protocol"))
-    document.getElementById("label-protocol").textContent = t("protocol");
+    document.getElementById("label-protocol").textContent = "Protocol";
   if (document.getElementById("label-group"))
-    document.getElementById("label-group").textContent = t("group");
+    document.getElementById("label-group").textContent = "Group";
   if (document.getElementById("label-port"))
-    document.getElementById("label-port").textContent = t("port");
+    document.getElementById("label-port").textContent = "Port";
   if (document.getElementById("label-credential"))
-    document.getElementById("label-credential").textContent = t(
-      "label_credential_node",
-    );
+    document.getElementById("label-credential").textContent = "Credential";
   if (document.getElementById("label-username"))
-    document.getElementById("label-username").textContent = t("label_username");
+    document.getElementById("label-username").textContent = "Username";
   if (document.getElementById("label-password"))
-    document.getElementById("label-password").textContent = t("label_password");
+    document.getElementById("label-password").textContent = "Password";
 
   // Group modal labels
   if (document.getElementById("grp-name-label"))
-    document.getElementById("grp-name-label").textContent = t("grp_name_label");
+    document.getElementById("grp-name-label").textContent = "Group Name";
   if (document.getElementById("grp-desc-label"))
-    document.getElementById("grp-desc-label").textContent = t("grp_desc_label");
+    document.getElementById("grp-desc-label").textContent = "Description";
   if (document.getElementById("grp-save"))
-    document.getElementById("grp-save").textContent = t("save");
+    document.getElementById("grp-save").textContent = "Save";
   if (document.getElementById("grp-cancel"))
-    document.getElementById("grp-cancel").textContent = t("cancel");
+    document.getElementById("grp-cancel").textContent = "Cancel";
 
   // Re-apply role-based visibility after language change
   if (window.currentUserRole !== undefined) {
@@ -209,25 +282,59 @@ function updateUI() {
   }
 }
 
-// ============ Language Switching ============
-function switchLanguage() {
-  currentLang = currentLang === "en" ? "zh" : "en";
-  localStorage.setItem("lang", currentLang);
-  updateUI();
-  refreshNodes();
-  loadUsers();
+// ============ Tab Navigation ============
+// Re-open the last visited sidebar tab after a full page reload.
+function restoreActiveTab() {
+  let saved = null;
+  try {
+    saved = localStorage.getItem("activeTabButton");
+  } catch (e) {}
+  if (!saved || saved === "tab-nodes") return;
+  const btn = document.getElementById(saved);
+  if (btn) btn.click();
 }
 
-// ============ Tab Navigation ============
 function switchTab(tabName, ev) {
   document
     .querySelectorAll(".tab-content")
     .forEach((el) => el.classList.remove("active"));
+  // Clear nav tabs (inside .sidebar); keep .tab usages elsewhere intact.
+  // Dropdown toggles are included too: the Config toggle carries .sidebar-subitem
+  // without .tab, so the previous loop never dropped its blue .active when the
+  // user moved to a tab outside it. Blue now means "contains the selected tab"
+  // exactly, matching the Settings dropdown behavior.
   document
-    .querySelectorAll(".tab")
+    .querySelectorAll(".sidebar .tab, .sidebar .sidebar-dropdown-toggle")
     .forEach((el) => el.classList.remove("active"));
-  document.getElementById(tabName).classList.add("active");
-  (ev || window.event).currentTarget.classList.add("active");
+
+  const content = document.getElementById(tabName);
+  if (content) content.classList.add("active");
+
+  const evt = ev || window.event;
+  const clicked = evt && evt.currentTarget ? evt.currentTarget : null;
+  if (clicked) clicked.classList.add("active");
+
+  // Remember which sidebar button opened this tab so a page refresh returns
+  // to the same tab (restoreActiveTab runs at load).
+  if (clicked && clicked.id) {
+    try {
+      localStorage.setItem("activeTabButton", clicked.id);
+    } catch (e) {}
+  }
+
+  // Top-nav UX: when a page lives inside a dropdown (Settings > ...), keep the
+  // owning dropdown toggle highlighted so you always know where you are.
+  let group = clicked ? clicked.closest(".sidebar-item-group") : null;
+  while (group) {
+    const toggle = group.querySelector(":scope > .sidebar-dropdown-toggle");
+    if (toggle) toggle.classList.add("active");
+    group = group.parentElement
+      ? group.parentElement.closest(".sidebar-item-group")
+      : null;
+  }
+
+  // Vertical rail: keep dropdown groups open after navigating so the active
+  // section stays visible (accordion behavior) instead of collapsing.
 
   if (tabName === "users") {
     loadUsers();
@@ -243,12 +350,23 @@ function switchTab(tabName, ev) {
     loadCredentialsToSelect("nodeCredential");
     loadGroupsToSelect("nodeGroup");
   }
-  if (tabName === "groups") {
-    loadGroups();
-  }
 }
 
-// ============ Sidebar Dropdown (Settings > Scheduler / Config / Users / Language / Logout) ============
+// ============ Top-nav dropdowns (Settings > Scheduler / Models / Config / Users) ============
+function closeAllDropdowns() {
+  document
+    .querySelectorAll(".sidebar-submenu.open")
+    .forEach((el) => el.classList.remove("open"));
+  document
+    .querySelectorAll(".sidebar-dropdown-toggle.open")
+    .forEach((el) => {
+      el.classList.remove("open");
+      // A closed group returns to the normal color; the blue "active" look
+      // only belongs to an open dropdown.
+      el.classList.remove("active");
+    });
+}
+
 function toggleSidebarDropdown(key, ev) {
   if (ev) {
     ev.stopPropagation();
@@ -259,8 +377,48 @@ function toggleSidebarDropdown(key, ev) {
   const toggleBtn =
     (ev && ev.currentTarget) ||
     document.getElementById("tab-" + key + "-toggle");
+  // Close sibling dropdowns at the same level so only one flyout shows.
+  const parent = submenu.parentElement;
+  if (parent) {
+    parent
+      .querySelectorAll(":scope > .sidebar-item-group > .sidebar-submenu.open")
+      .forEach((sib) => {
+        if (sib !== submenu) {
+          sib.classList.remove("open");
+          const bt = sib.parentElement.querySelector(
+            ":scope > .sidebar-dropdown-toggle",
+          );
+          if (bt) {
+            bt.classList.remove("open");
+            bt.classList.remove("active");
+          }
+        }
+      });
+  }
   const isOpen = submenu.classList.toggle("open");
-  if (toggleBtn) toggleBtn.classList.toggle("open", isOpen);
+  if (toggleBtn) {
+    toggleBtn.classList.toggle("open", isOpen);
+    // Collapsing the dropdown must restore the toggle's normal color — the
+    // blue .active highlight (added by switchTab for the current tab's group)
+    // is only kept while the dropdown is open.
+    if (!isOpen) toggleBtn.classList.remove("active");
+  }
+}
+
+// Sidebar UX polish, applied once at startup:
+// - icon-less leaf items get a small bullet marker via .sidebar-leaf so the
+//   nested list stays readable; items with icons already align on their own.
+function markSidebarLeafItems() {
+  document
+    .querySelectorAll(".sidebar-submenu .sidebar-subitem")
+    .forEach((item) => {
+      if (
+        !item.classList.contains("sidebar-dropdown-toggle") &&
+        !item.querySelector(".icon")
+      ) {
+        item.classList.add("sidebar-leaf");
+      }
+    });
 }
 
 // ============ Row action overflow menu (Device table "[ Backup ]  ⋮") ============
@@ -316,6 +474,13 @@ document.addEventListener("click", (e) => {
   if (openActionMenu && !openActionMenu.contains(e.target)) {
     closeAllActionMenus();
   }
+  // Close the account dropdown when clicking anywhere outside it.
+  const um = document.getElementById("userMenu");
+  if (um && um.classList.contains("open") && !e.target.closest(".user-menu-wrap")) {
+    um.classList.remove("open");
+  }
+  // The sidebar is a persistent vertical rail, so nav dropdowns are NOT
+  // auto-closed on outside click; users toggle them explicitly.
 });
 document.addEventListener(
   "scroll",
@@ -328,24 +493,526 @@ window.addEventListener("resize", () => {
   if (openActionMenu) closeAllActionMenus();
 });
 
-// ============ Logout ============
-function logout() {
-  if (confirm(t("confirm_logout") || "Are you sure to logout?")) {
-    window.location.href = "/api/logout";
+// ============ Right Panel: Action / Detail wiring ============
+// Connects the 6 device actions (Edit, Load Config, History, Backup Trigger,
+// Schedule Backup, Delete) to the permanent Right Panel instead of opening
+// them as modal popups. This reuses each action's existing handler/markup
+// as-is — only *where* the result is shown changes (Right Panel instead of
+// a centered modal). Activity Log (the panel's bottom section) is never
+// touched by any of this.
+const ACTION_DETAIL_PANEL_DEFAULT_HTML = `
+  <div class="right-panel-placeholder">
+    <svg class="right-panel-placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <line x1="7" y1="9" x2="17" y2="9" />
+      <line x1="7" y1="13" x2="14" y2="13" />
+    </svg>
+    <p>No action selected</p>
+    <p class="right-panel-placeholder-sub">
+      Details for Edit, Load Config, History, Backup Trigger, Schedule
+      Backup, or Delete will appear here.
+    </p>
+  </div>
+`;
+
+// Tracks which modal (if any) currently has its .modal-content living inside
+// the Right Panel, so a "Close/Cancel" click can hand it back home.
+let actionPanelCurrentModal = null;
+
+// Tracks the device the panel is currently "about" (shown in the small
+// context banner at the top of the action section).
+let currentPanelDevice = null;
+
+// Idle state: the Action section is hidden entirely, so the Right Panel is
+// just Activity Log (which then naturally fills the whole panel, since it's
+// the only flex child left — see .right-panel-action-hidden in the CSS).
+function renderActionPanelPlaceholder() {
+  // If a modal's content is currently on loan to the panel, give it back to
+  // its own modal so that modal still works normally if opened another way.
+  // Found by its own stable id (not modal.querySelector(".modal-content")),
+  // because once the content has been moved out of the modal once, it's no
+  // longer a descendant of it, so that lookup would silently find nothing
+  // on the 2nd+ open — which used to let panelBody.innerHTML below delete
+  // the real content node instead of returning it home.
+  if (actionPanelCurrentModal) {
+    const modal = document.getElementById(actionPanelCurrentModal);
+    const content = document.getElementById(actionPanelCurrentModal + "Content");
+    if (modal && content) modal.appendChild(content);
+    actionPanelCurrentModal = null;
+  }
+  // Clear any Compare/Diff wide-panel state so the panel returns to idle.
+  const panelEl = document.querySelector(".right-panel");
+  if (panelEl) {
+    panelEl.classList.remove("right-panel-diff");
+    panelEl.classList.remove("right-panel-compact-action");
+  }
+  diffShownInPanel = false;
+  const actionSection = document.querySelector(".right-panel-action");
+  if (actionSection) actionSection.classList.add("right-panel-action-hidden");
+  const panelBody = document.getElementById("action-detail-panel");
+  if (panelBody) {
+    panelBody.classList.remove("panel-split-mode");
+    panelBody.classList.remove("panel-diff-mode");
+    panelBody.innerHTML = ACTION_DETAIL_PANEL_DEFAULT_HTML;
+  }
+  const titleEl = document.getElementById("right-panel-action-title");
+  if (titleEl) titleEl.textContent = "Action / Detail";
+}
+
+// Per-action glyphs that mirror the icons in the device row's pencil menu, so
+// the Right Panel title shows the SAME icon as the action it was opened from.
+const PENCIL_ICON_SVG =
+  '<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
+
+const LOAD_CONFIG_ICON_SVG =
+  '<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>';
+
+const HISTORY_ICON_SVG =
+  '<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>';
+
+const SCHEDULE_ICON_SVG =
+  '<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11zM7 10h5v5H7z"/></svg>';
+
+// Panel title icon keyed by action label (defaults to the pencil/edit glyph).
+const ACTION_PANEL_ICONS = {
+  "Edit Node": PENCIL_ICON_SVG,
+  "Load Config": LOAD_CONFIG_ICON_SVG,
+  "Backup History": HISTORY_ICON_SVG,
+  "Schedule Backup": SCHEDULE_ICON_SVG,
+  "Global Schedule": SCHEDULE_ICON_SVG,
+};
+
+// Actions whose panel content is short (a small form/list): the Action section
+// sizes to its content and the Activity Log grows to fill, so there's no empty
+// gap left under the form.
+const COMPACT_ACTION_LABELS = new Set([
+  "Schedule Backup",
+  "Global Schedule",
+  "Add Group",
+  "Edit Group",
+]);
+
+// Reveals the Action section (panel splits into Action + Activity Log) and
+// renames its heading to whatever action was picked (Edit, Load Config,
+// History, Backup Trigger, Schedule Backup, Delete) instead of a generic
+// "Action / Detail" label. Returns the empty slot element the caller should
+// fill in.
+function setActionPanelContext(deviceName, actionLabel) {
+  const panelBody = document.getElementById("action-detail-panel");
+  if (!panelBody) return null;
+  currentPanelDevice = deviceName;
+
+  // Hand back any modal content still on loan to the panel BEFORE wiping the
+  // slot. Switching straight between pencil actions (Edit -> Load Config ->
+  // History -> ...) used to run innerHTML="" on the borrowed node, orphaning
+  // it out of the DOM, so reopening that action found nothing left to show and
+  // the panel looked blank.
+  if (actionPanelCurrentModal) {
+    const prevModal = document.getElementById(actionPanelCurrentModal);
+    const prevContent = document.getElementById(
+      actionPanelCurrentModal + "Content",
+    );
+    if (prevModal && prevContent) prevModal.appendChild(prevContent);
+    actionPanelCurrentModal = null;
+  }
+
+  const actionSection = document.querySelector(".right-panel-action");
+  if (actionSection)
+    actionSection.classList.remove("right-panel-action-hidden");
+  const titleEl = document.getElementById("right-panel-action-title");
+  // Single header line "(action icon) Title — device". The icon matches the
+  // same action in the device row's pencil menu (Edit=pencil, Load Config=document).
+  if (titleEl) {
+    const icon = ACTION_PANEL_ICONS[actionLabel] || PENCIL_ICON_SVG;
+    const text = deviceName
+      ? `${actionLabel} \u2014 ${escapeHtml(deviceName)}`
+      : escapeHtml(actionLabel);
+    titleEl.innerHTML = `${icon}<span>${text}</span>`;
+  }
+
+  // Short-content actions (schedule, add/edit group) let the Activity Log grow.
+  const panel = document.querySelector(".right-panel");
+  if (panel)
+    panel.classList.toggle(
+      "right-panel-compact-action",
+      COMPACT_ACTION_LABELS.has(actionLabel),
+    );
+
+  panelBody.classList.remove("panel-split-mode");
+  panelBody.innerHTML = "";
+  const slot = document.createElement("div");
+  slot.className = "action-panel-slot";
+  panelBody.appendChild(slot);
+  return slot;
+}
+
+// Moves an existing modal's .modal-content into the Right Panel instead of
+// showing it as a centered popup. The modal keeps its own fields, ids and
+// submit/close handlers untouched — nothing here duplicates that logic.
+function revealModalInActionPanel(modalId, deviceName, actionLabel) {
+  const content = document.getElementById(modalId + "Content");
+  const slot = setActionPanelContext(deviceName, actionLabel);
+  if (!content || !slot) return;
+  slot.appendChild(content);
+  // The panel header already shows "Title — device", so drop the modal's own
+  // title bar to avoid a duplicate heading inside the panel.
+  const mh = content.querySelector(".modal-header");
+  if (mh) mh.style.display = "none";
+  actionPanelCurrentModal = modalId;
+}
+
+// Called from a modal's existing close/cancel handler so that, when that
+// modal's content is currently on loan to the panel, closing it goes back
+// to idle (Action section hidden, just Activity Log) instead of leaving
+// stale content behind.
+function resetActionPanelIfShowing(modalId) {
+  if (actionPanelCurrentModal === modalId) {
+    // Let renderActionPanelPlaceholder() read actionPanelCurrentModal itself
+    // (it needs it to find the content and move it back to its modal before
+    // clearing the panel) — nulling it here first was causing that lookup
+    // to be skipped, so the form got deleted instead of returned home.
+    renderActionPanelPlaceholder();
   }
 }
 
+// ============ Activity Log (Right Panel, bottom section) ============
+// Records backup outcomes (Success/Failed) plus one-off events that carry a
+// custom label (e.g. "Node updated successfully" via logActivityEvent). It does
+// NOT log History/View/Schedule opens or menu clicks. The server (a plain-text
+// file via POST/GET /api/activity-log) is the source of truth, so the log
+// survives a reload and is shared across browsers. The browser keeps only an
+// ephemeral list of "pending" triggers that haven't reached a final result yet;
+// once a backup finishes we compute its diff, persist it, and drop the pending
+// copy.
+let activityLogServerEntries = []; // [{timestamp,name,ip,status,insert,delete,message}] newest first
+let activityLogPending = []; // browser-only optimistic rows, newest first
+
+function getNodeIp(name) {
+  const node = (allNodes || []).find((n) => n.name === name);
+  return node && node.ip ? node.ip : "";
+}
+
+// Pulls the persisted log from the server and renders it. Called on load and
+// on a timer; the pending rows already in memory stay pinned on top.
+function loadActivityLog() {
+  return fetch("/api/activity-log?limit=200")
+    .then((r) => (r.ok ? r.json() : { entries: [] }))
+    .then((data) => {
+      activityLogServerEntries = Array.isArray(data.entries) ? data.entries : [];
+      renderActivityLog();
+    })
+    .catch(() => {
+      // Server unreachable — keep whatever we already had on screen.
+      renderActivityLog();
+    });
+}
+
+// Manual Backup reports its status directly in Activity Log instead of opening
+// a separate "Backup Trigger" view: one row is created up front as "pending"
+// (Waiting) and the SAME row is finalized in place once the result comes back —
+// never a second row for the same trigger. Pending rows are browser-only and
+// are written to the server file only when they reach SUCCESS/FAILED.
+function addPendingActivityLogEntry(hostname) {
+  const id = `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  activityLogPending.unshift({
+    id,
+    status: "pending",
+    hostname,
+    ip: getNodeIp(hostname),
+    timestamp: Date.now(),
+  });
+  renderActivityLog();
+  return id;
+}
+
+// Fetches the two most recent backups and their diff stats so a successful
+// entry can carry the +X/-Y badge. Degrades to "no badge" (null/null) when
+// history or diff isn't available — it never blocks the log write.
+function computeBackupDiff(hostname) {
+  const empty = { insert: null, delete: null };
+  return fetch(`/api/oxidized/node/${encodeURIComponent(hostname)}/history`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((history) => {
+      const arr = Array.isArray(history) ? history : [];
+      if (arr.length < 2) return empty;
+      const newest = arr[0]; // API returns newest first
+      const previous = arr[1];
+      if (!newest.oid || !previous.oid) return empty;
+      const qs = new URLSearchParams({
+        oid1: previous.oid,
+        oid2: newest.oid,
+      });
+      return fetch(
+        `/api/oxidized/node/${encodeURIComponent(hostname)}/diff?${qs.toString()}`,
+      )
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) =>
+          d && d.stats
+            ? { insert: d.stats.insert, delete: d.stats.delete }
+            : empty,
+        )
+        .catch(() => empty);
+    })
+    .catch(() => empty);
+}
+
+// Finalizes a pending row: resolves its diff, persists one line to the server,
+// then swaps the pending row for the confirmed server row (in place).
+function updateActivityLogEntry(id, status, timestampMs) {
+  const pend = activityLogPending.find((e) => e.id === id);
+  if (!pend) return;
+  const hostname = pend.hostname;
+  const ip = pend.ip || getNodeIp(hostname);
+  const ts = timestampMs || Date.now();
+  const finalStatus = status === "success" ? "SUCCESS" : "FAILED";
+
+  const persist = (insert, del) => {
+    const isoTs = new Date(ts).toISOString();
+    const removePending = () => {
+      const idx = activityLogPending.findIndex((e) => e.id === id);
+      if (idx !== -1) activityLogPending.splice(idx, 1);
+    };
+    return fetch("/api/activity-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: hostname,
+        ip,
+        status: finalStatus,
+        insert,
+        delete: del,
+        timestamp: isoTs,
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((res) => {
+        removePending();
+        if (res && res.success && res.entry) {
+          activityLogServerEntries.unshift(res.entry);
+        } else {
+          // Server write failed: show the outcome optimistically so the UI
+          // never silently loses a completed backup.
+          activityLogServerEntries.unshift({
+            timestamp: isoTs,
+            name: hostname,
+            ip,
+            status: finalStatus,
+            insert,
+            delete: del,
+          });
+        }
+        renderActivityLog();
+      })
+      .catch(() => {
+        removePending();
+        activityLogServerEntries.unshift({
+          timestamp: isoTs,
+          name: hostname,
+          ip,
+          status: finalStatus,
+          insert,
+          delete: del,
+        });
+        renderActivityLog();
+      });
+  };
+
+  if (finalStatus === "SUCCESS") {
+    computeBackupDiff(hostname).then((d) => persist(d.insert, d.delete));
+  } else {
+    persist(null, null);
+  }
+}
+
+const ACTIVITY_LOG_EMPTY_HTML = `
+  <div class="right-panel-placeholder">
+    <svg class="right-panel-placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 16 14" />
+    </svg>
+    <p>No activity yet</p>
+    <p class="right-panel-placeholder-sub">
+      Automatic backups, backup success/failure, and other activity
+      will show up here.
+    </p>
+  </div>
+`;
+
+// Builds the +/- diff badge shown inline next to the hostname. Only successful
+// backups carry a badge; "no change" (grey) when both counts are 0, otherwise
+// +X (green) / -Y (red). A null/unknown diff (older rows, or diff unavailable)
+// renders nothing.
+function activityLogDiffBadge(item) {
+  if (item.status !== "success") return "";
+  const ins = item.insert;
+  const del = item.delete;
+  if (ins == null && del == null) return "";
+  const i = ins || 0;
+  const d = del || 0;
+  if (i === 0 && d === 0) {
+    return '<span class="activity-log-diff activity-log-diff-none">no change</span>';
+  }
+  let html = "";
+  if (i > 0) html += `<span class="activity-log-diff activity-log-diff-add">+${i}</span>`;
+  if (d > 0) html += `<span class="activity-log-diff activity-log-diff-del">-${d}</span>`;
+  return html;
+}
+
+// Capitalises the first letter of every word so activity-log labels read
+// consistently (e.g. "Node updated successfully" -> "Node Updated Successfully").
+function toTitleCase(str) {
+  return String(str || "").replace(/\S+/g, (w) =>
+    w.charAt(0).toUpperCase() + w.slice(1),
+  );
+}
+
+function renderActivityLog() {
+  const container = document.getElementById("activity-log-panel");
+  if (!container) return;
+
+  // Pending rows (browser-only, not yet on the server) sit on top, then the
+  // persisted server rows (already newest-first).
+  const pendingItems = (activityLogPending || []).map((e) => ({
+    status: "pending",
+    hostname: e.hostname,
+    ip: e.ip || "",
+    timestamp: e.timestamp,
+    insert: null,
+    delete: null,
+  }));
+  const serverItems = (activityLogServerEntries || []).map((e) => ({
+    status: (e.status || "").toLowerCase(), // SUCCESS/FAILED -> success/failed
+    hostname: e.name,
+    ip: e.ip || "",
+    timestamp: e.timestamp,
+    insert: e.insert,
+    delete: e.delete,
+    message: e.message || "",
+  }));
+  const list = pendingItems.concat(serverItems);
+
+  if (list.length === 0) {
+    container.innerHTML = ACTIVITY_LOG_EMPTY_HTML;
+    return;
+  }
+  container.innerHTML = list
+    .map((entry) => {
+      const d = new Date(entry.timestamp);
+      const dateLine = isNaN(d.getTime())
+        ? ""
+        : d.toLocaleDateString("id-ID", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          });
+      const timeLine = isNaN(d.getTime())
+        ? ""
+        : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+      let dotClass = "activity-log-dot-failed";
+      let titleClass = "activity-log-title-failed";
+      let titleText = "Backup Failed";
+      if (entry.status === "pending") {
+        dotClass = "activity-log-dot-pending";
+        titleClass = "activity-log-title-pending";
+        titleText = "Waiting For Backup\u2026";
+      } else if (entry.status === "success") {
+        dotClass = "activity-log-dot-success";
+        titleClass = "activity-log-title-success";
+        titleText = "Backup Completed";
+      }
+      // Non-backup events (e.g. "Node updated successfully") carry a custom
+      // label that replaces the backup title; they never show a diff badge.
+      // Every word is capitalised so labels read consistently in the log.
+      if (entry.message) {
+        titleText = escapeHtml(toTitleCase(entry.message));
+      }
+      const badge = entry.message ? "" : activityLogDiffBadge(entry);
+      // No IP line: the hostname alone identifies the device here, and the
+      // extra line made every entry read cluttered.
+      return `
+        <div class="activity-log-item">
+          <span class="activity-log-dot ${dotClass}" aria-hidden="true"></span>
+          <div class="activity-log-text">
+            <div class="activity-log-title ${titleClass}">
+              ${titleText}
+            </div>
+            <div class="activity-log-hostname">${escapeHtml(entry.hostname)}${badge}</div>
+            <div class="activity-log-date">${escapeHtml(dateLine)}</div>
+            <div class="activity-log-time">${escapeHtml(timeLine)}</div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+// Records a one-off activity event (e.g. a successful device edit) directly to
+// the server log with a custom label, then refreshes the panel. Reuses the
+// SUCCESS status so it renders with the green dot; the `message` field drives
+// the title line instead of "Backup completed".
+function logActivityEvent(hostname, message) {
+  const ip = typeof getNodeIp === "function" ? getNodeIp(hostname) : "";
+  return fetch("/api/activity-log", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: hostname,
+      ip: ip,
+      status: "SUCCESS",
+      message: message,
+    }),
+  })
+    .then(() => loadActivityLog())
+    .catch(() => {});
+}
+
+// ============ Logout ============
+function logout() {
+  confirmAction("Are you sure you want to logout?", () => {
+    window.location.href = "/api/logout";
+  });
+}
+
+// Account dropdown: Logout / Change Password are hidden until the admin
+// button is clicked, then a small menu opens above it.
+function toggleUserMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const m = document.getElementById("userMenu");
+  if (m) m.classList.toggle("open");
+}
+
+function closeUserMenu() {
+  const m = document.getElementById("userMenu");
+  if (m) m.classList.remove("open");
+}
+
 // ============ Password Toggle ============
+// Eye / eye-off SVG icons that match the rest of the UI (replaces the emoji,
+// which looked inconsistent). Toggle swaps the inline SVG inside the button.
+const PASSWORD_EYE_OPEN =
+  '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+const PASSWORD_EYE_OFF =
+  '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10 10 0 0 1 12 20C5 20 1 12 1 12a18 18 0 0 1 5.06-5.94M9.9 4.24A9 9 0 0 1 12 4c7 0 11 8 11 8a18 18 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
 function togglePasswordVisibility(inputId) {
   const input = document.getElementById(inputId);
-  const button = event.target;
+  const evt = window.event;
+  const button =
+    evt && evt.target ? evt.target.closest(".password-toggle") : null;
+  if (!input || !button) return;
   if (input.type === "password") {
     input.type = "text";
-    button.textContent = "👁️‍🗨️";
+    button.innerHTML = PASSWORD_EYE_OFF;
   } else {
     input.type = "password";
-    button.textContent = "👁️";
+    button.innerHTML = PASSWORD_EYE_OPEN;
   }
+}
+
+function initPasswordToggleIcons() {
+  document.querySelectorAll(".password-toggle").forEach((b) => {
+    b.innerHTML = PASSWORD_EYE_OPEN;
+  });
 }
 
 // ============ Node Port Auto-Update ============
@@ -363,7 +1030,15 @@ function updateEditNodePort() {
 
 // ============ Credential Auto-Fill ============
 function onCredentialChange() {
-  const credId = document.getElementById("nodeCredential").value;
+  const sel = document.getElementById("nodeCredential");
+  const credId = sel.value;
+  // "＋ Create new credential…" pseudo-option: reveal the inline form.
+  if (credId === "__new__") {
+    openInlineCredForm();
+    sel.value = "";
+    return;
+  }
+  closeInlineCredForm();
   if (!credId) return;
   const cred = allCredentials.find((c) => c.id == credId);
   if (cred) {
@@ -383,7 +1058,12 @@ function onEditCredentialChange() {
 }
 
 // ============ Oxidized Status ============
-function refreshOxidizedStatus() {
+function refreshOxidizedStatus(silent) {
+  // Background (interval) refreshes are silent; only a manual refresh from
+  // the button shows the "refreshed" popup.
+  const finish = () => {
+    if (!silent) showInfoToast("Device list and Oxidized status refreshed");
+  };
   fetch("/api/oxidized/status")
     .then((r) => r.json())
     .then((data) => {
@@ -394,34 +1074,47 @@ function refreshOxidizedStatus() {
         });
       }
       refreshNodes();
+      finish();
     })
     .catch((err) => {
       console.error("Failed to fetch Oxidized status:", err);
       refreshNodes();
+      finish();
     });
 }
 
+function showRestartStatus(message, ok) {
+  // The restart RESULT shows as a bottom popup (info toast), matching the
+  // other device/Oxidized notifications. The Restart confirmation itself still
+  // uses its own popup above.
+  showInfoToast(message, !ok);
+}
+
 function restartOxidizedContainer() {
-  if (
-    !confirm("Restart Oxidized container? This will interrupt current backups.")
-  )
-    return;
-  showAlert("Restarting Oxidized container...", "info");
+  confirmAction(
+    "Restart Oxidized? This will interrupt running backups.",
+    performOxidizedRestart,
+    { danger: true, confirmLabel: "Restart" },
+  );
+}
+
+function performOxidizedRestart() {
+  showRestartStatus("Restarting Oxidized container...", true);
   fetch("/api/oxidized/restart", { method: "POST" })
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert("Oxidized container restarted successfully");
+        showRestartStatus("Oxidized restarted successfully", true);
         setTimeout(refreshOxidizedStatus, 3000);
       } else {
-        showAlert(
+        showRestartStatus(
           "Failed to restart Oxidized: " + (data.error || "Unknown error"),
-          "error",
+          false,
         );
       }
     })
     .catch((err) => {
-      showAlert("Error restarting Oxidized: " + err.message, "error");
+      showRestartStatus("Error restarting Oxidized: " + err.message, false);
     });
 }
 
@@ -462,20 +1155,33 @@ function formatLatestBackupDate(status) {
   return `${day} ${month} ${year}, ${hh}:${mm}`;
 }
 
+// Transient client-side status shown while a manually triggered backup is
+// in flight ("Triggered" / "Waiting"). Cleared as soon as the trigger
+// request resolves, at which point the real Success/Failed result (below)
+// takes over again.
+let triggerStatusOverrides = {};
+
 // "Status" column: just the backup result, no timestamp (that now lives only
 // in the separate "Latest Backup" column).
 function getOxidizedStatusOnly(nodeName) {
+  const override = triggerStatusOverrides[nodeName];
+  if (override === "triggered") {
+    return '<span class="status-text status-triggered"><span class="status-dot"></span>Triggered</span>';
+  }
+  if (override === "waiting") {
+    return '<span class="status-text status-waiting"><span class="status-dot"></span>Waiting</span>';
+  }
   const status = oxidizedStatus[nodeName];
   if (!status) {
-    return '<span class="status-text status-muted">Not in Oxidized</span>';
+    return '<span class="status-text status-muted"><span class="status-dot"></span>Not in Oxidized</span>';
   }
   if (status.status === "success") {
-    return '<span class="status-text status-success">&#10003; Success</span>';
+    return '<span class="status-text status-success"><span class="status-dot"></span>Success</span>';
   }
   if (status.status === "failed") {
-    return '<span class="status-text status-failed">&#10007; Failed</span>';
+    return '<span class="status-text status-failed"><span class="status-dot"></span>Failed</span>';
   }
-  return `<span class="status-text status-pending">&#8987; ${escapeHtml(status.status || "Unknown")}</span>`;
+  return `<span class="status-text status-pending"><span class="status-dot"></span>${escapeHtml(status.status || "Unknown")}</span>`;
 }
 
 function getOxidizedStatusBadge(nodeName) {
@@ -497,52 +1203,43 @@ function getOxidizedStatusBadge(nodeName) {
 
 // ============ Node Filtering & Rendering ============
 function filterNodes() {
-  const searchText = document.getElementById("nodeSearch").value.toLowerCase();
-  const groupFilter = document.getElementById("nodeGroupFilter").value;
+  renderDevices();
+}
 
-  const filtered = allNodes.filter((node) => {
-    const matchesSearch =
-      !searchText ||
-      (node.name && node.name.toLowerCase().includes(searchText)) ||
-      (node.ip && node.ip.toLowerCase().includes(searchText)) ||
-      (node.model && node.model.toLowerCase().includes(searchText));
-    const matchesGroup =
-      !groupFilter || String(node.group_id) === String(groupFilter);
-    return matchesSearch && matchesGroup;
-  });
-
-  renderNodesTable(filtered);
+function formatModelDisplay(name) {
+  // Consistent "Brand - Model" label (e.g. "Cisco - Cisco IOS"), used in the
+  // Add/Edit dropdowns and the device table so both match after submit.
+  if (!name) return "-";
+  const n = String(name).trim();
+  const parts = n.split(/\s+/);
+  if (parts.length < 2) return n;
+  return `${parts[0]} - ${n}`;
 }
 
 function getModelDisplayName(modelId) {
   if (!modelId) return "-";
   const found = (allModels || []).find((m) => String(m.id) === String(modelId));
-  return found ? found.name : modelId;
+  return found ? formatModelDisplay(found.name) : modelId;
 }
 
 function renderNodeRow(node) {
-  const groupCell = node.group_name
-    ? `<span class="group-badge">${escapeHtml(node.group_name)}</span>`
-    : '<span class="cell-muted">-</span>';
-
   return `
         <tr>
             <td>
                 <div class="device-cell">
                     <div class="device-name">${escapeHtml(node.name)}</div>
+                    <div class="device-model">${escapeHtml(getModelDisplayName(node.model))}</div>
                     <div class="device-ip">${escapeHtml(node.ip)}</div>
                 </div>
             </td>
-            <td>${escapeHtml(getModelDisplayName(node.model))}</td>
-            <td class="connection-cell">${escapeHtml(node.protocol || "-")} &middot; ${node.port || "-"}</td>
-            <td>${groupCell}</td>
-            <td>${getOxidizedStatusOnly(node.name)}</td>
+            <td class="connection-cell"><div class="conn-proto">${escapeHtml((node.protocol || "-").toUpperCase())}</div><div class="conn-port">${node.port || "-"}</div></td>
+            <td class="status-cell">${getOxidizedStatusOnly(node.name)}</td>
             <td>${formatLatestBackupDate(oxidizedStatus[node.name])}</td>
             <td>
                 <div class="row-actions">
                     <button class="btn btn-row-primary" onclick="triggerBackup('${escapeHtml(node.name)}')" title="Trigger Backup">Backup</button>
                     <div class="action-menu-wrap">
-                        <button class="action-menu-toggle" onclick="toggleActionMenu(this, event)" title="More actions" aria-label="More actions">&#8942;</button>
+                        <button class="action-menu-toggle" onclick="toggleActionMenu(this, event)" title="Actions" aria-label="Actions"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
                         <div class="action-menu">
                             <button onclick="closeAllActionMenus(); openEditModal('${escapeHtml(node.name)}')">
                                 <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
@@ -557,7 +1254,7 @@ function renderNodeRow(node) {
                                 <span>History</span>
                             </button>
                             <button onclick="closeAllActionMenus(); openDeviceOrGroupSchedule('node', '${escapeHtml(node.name)}')">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 10.59V6h-2v7.41l4.71 4.71 1.42-1.42z"/></svg>
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11zM7 10h5v5H7z"/></svg>
                                 <span>Schedule Backup</span>
                             </button>
                             <div class="action-menu-separator"></div>
@@ -573,232 +1270,535 @@ function renderNodeRow(node) {
     `;
 }
 
-function renderNodesTable(nodes) {
+// Unified Devices view: every device shown grouped by its group (group
+// sections always visible, no dropdown/accordion). The redundant "Group"
+// column is gone because the group is now the section header. The search box
+// and the group filter narrow this single view.
+function renderDevices() {
   closeAllActionMenus();
-  const tbody = document.getElementById("nodesList");
-  if (nodes.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No matching nodes</td></tr>`;
+  const container = document.getElementById("groups-sections");
+  if (!container) return;
+
+  const searchEl = document.getElementById("nodeSearch");
+  const filterEl = document.getElementById("nodeGroupFilter");
+  const searchText = (searchEl ? searchEl.value : "").toLowerCase();
+  const groupFilter = filterEl ? filterEl.value : "";
+
+  // Search matches on device name, IP and the device's GROUP name.
+  const groupNameById = {};
+  (allGroups || []).forEach((g) => {
+    groupNameById[String(g.id)] = (g.name || "").toLowerCase();
+  });
+
+  const nodes = (allNodes || []).filter(
+    (node) =>
+      !searchText ||
+      (node.name && node.name.toLowerCase().includes(searchText)) ||
+      (node.ip && node.ip.toLowerCase().includes(searchText)) ||
+      (groupNameById[String(node.group_id)] || "").includes(searchText) ||
+      (node.model && node.model.toLowerCase().includes(searchText)),
+  );
+
+  const groups = (allGroups || []).filter(
+    (g) => !groupFilter || String(g.id) === String(groupFilter),
+  );
+
+  const sections = groups.map((g) => ({
+    key: "group-" + g.id,
+    name: g.name,
+    description: g.description,
+    id: g.id,
+    nodes: nodes.filter((n) => String(n.group_id) === String(g.id)),
+  }));
+
+  // Every device belongs to a group, so there is no "Ungrouped" section.
+  // (Group is required when adding/editing a device.)
+
+  if (sections.length === 0) {
+    container.innerHTML =
+      '<div class="group-section-empty">No groups yet. Click "Add Group" to create one.</div>';
     return;
   }
-  tbody.innerHTML = nodes.map(renderNodeRow).join("");
+
+  container.innerHTML = sections
+    .map(
+      (sec) => `
+      <div class="group-section">
+        <div class="group-section-header">
+          <div class="group-section-heading">
+            <div class="group-section-title">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M3 21V10l9-7 9 7v11h-6v-7H9v7H3z"/></svg>
+              <span>${escapeHtml(sec.name)}</span>
+            </div>
+            ${
+              sec.id != null
+                ? `<div class="btn-group">
+                    <button class="btn" style="padding:5px 10px;font-size:12px;" onclick="openDeviceOrGroupSchedule('group', '${sec.id}')">Schedule</button>
+                    <button class="btn" style="padding:5px 10px;font-size:12px;" onclick="openEditGroupModal(${sec.id}, '${escapeHtml(sec.name)}', '${escapeHtml(sec.description || "")}')">Edit</button>
+                    <button class="btn btn-danger" style="padding:5px 10px;font-size:12px;" onclick="deleteGroup(${sec.id})">Delete</button>
+                  </div>`
+                : ""
+            }
+          </div>
+          ${sec.description ? `<div class="group-section-desc">${escapeHtml(sec.description)}</div>` : ""}
+          <div class="group-section-count">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><line x1="7" y1="7.5" x2="7.01" y2="7.5"/><line x1="7" y1="16.5" x2="7.01" y2="16.5"/></svg>
+            <span>${sec.nodes.length} ${sec.nodes.length === 1 ? "Device" : "Devices"}</span>
+          </div>
+        </div>
+        ${
+          sec.nodes.length === 0
+            ? `<div class="group-section-empty">No devices in this group yet</div>`
+            : `<table class="group-devices-table">
+                <colgroup>
+                  <col class="col-device" />
+                  <col class="col-connection" />
+                  <col class="col-status" />
+                  <col class="col-latest" />
+                  <col class="col-action" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Device</th>
+                    <th>Connection</th>
+                    <th>Status</th>
+                    <th>Latest Backup</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>${sec.nodes.map(renderNodeRow).join("")}</tbody>
+              </table>`
+        }
+      </div>`,
+    )
+    .join("");
 }
 
 function refreshNodes() {
   closeAllActionMenus();
-  document.getElementById("nodesList").innerHTML =
-    `<tr><td colspan="7" style="text-align:center;">${t("loading")}</td></tr>`;
   fetch("/api/nodes")
     .then((r) => r.json())
     .then((nodes) => {
       allNodes = nodes;
-      // Populate group filter dropdown
+      // Keep the group filter dropdown in sync with the known groups.
       const groupFilter = document.getElementById("nodeGroupFilter");
-      const groupMap = new Map();
-      nodes.forEach((n) => {
-        if (n.group_id != null && n.group_name && String(n.group_name).trim()) {
-          if (!groupMap.has(n.group_id)) {
-            groupMap.set(n.group_id, n.group_name);
-          }
-        }
-      });
-      const uniqueGroups = [...groupMap.entries()];
-      const currentFilter = groupFilter.value;
-      groupFilter.innerHTML =
-        '<option value="">All Groups</option>' +
-        uniqueGroups
-          .map(
-            ([id, name]) =>
-              `<option value="${id}">${escapeHtml(name)}</option>`,
-          )
-          .join("");
-      groupFilter.value = currentFilter;
-      filterNodes();
+      if (groupFilter) {
+        const currentFilter = groupFilter.value;
+        groupFilter.innerHTML =
+          '<option value="">All Groups</option>' +
+          (allGroups || [])
+            .map((g) => `<option value="${g.id}">${escapeHtml(g.name)}</option>`)
+            .join("");
+        groupFilter.value = currentFilter;
+      }
+      renderDevices();
     });
 }
 
 // ============ Oxidized Config Functions ============
 function viewConfig(nodeName) {
-  document.getElementById("view-config-node-name").textContent = nodeName;
-  document.getElementById("view-config-status").innerHTML =
+  revealModalInActionPanel("viewConfigModal", nodeName, "Load Config");
+  // Keep the inner "View Configuration" heading visible — it labels the config
+  // viewer itself and is distinct from the "Load Config" panel title above it.
+  const vh = document.querySelector("#viewConfigModalContent .modal-header");
+  if (vh) vh.style.display = "";
+  const st = document.getElementById("view-config-status");
+  st.innerHTML =
     '<span class="skeleton skeleton-inline" style="width: 120px;"></span>';
   document.getElementById("viewConfigContent").value = "";
-  document.getElementById("viewConfigModal").classList.add("show");
+  // Status renders on the title line as "View Configuration - <status>", using
+  // the same colored-dot pill as the device/group backup status column.
+  const setPill = (label, ok) => {
+    st.innerHTML =
+      '<span class="vc-status-sep">-</span>' +
+      `<span class="status-text ${ok ? "status-success" : "status-failed"}">` +
+      `<span class="status-dot"></span>${escapeHtml(label)}</span>`;
+  };
 
   fetch(`/api/oxidized/node/${nodeName}/config`)
     .then((r) => r.json())
     .then((data) => {
       if (data.config) {
         document.getElementById("viewConfigContent").value = data.config;
-        document.getElementById("view-config-status").textContent =
-          "✓ Config loaded";
+        setPill("Load Config Completed", true);
       } else {
-        document.getElementById("view-config-status").textContent =
-          "✗ Failed to load config";
+        setPill("Load Config Failed", false);
       }
     })
-    .catch((err) => {
-      document.getElementById("view-config-status").textContent =
-        "✗ Error: " + err.message;
+    .catch(() => {
+      setPill("Load Config Failed", false);
     });
 }
 
 function closeViewConfigModal() {
   document.getElementById("viewConfigModal").classList.remove("show");
+  resetActionPanelIfShowing("viewConfigModal");
+}
+
+// navigator.clipboard.writeText() only exists in a "secure context" (HTTPS
+// or localhost). When the dashboard is reached over plain HTTP on a LAN IP
+// (e.g. http://192.168.x.x:5000), navigator.clipboard is undefined and the
+// old code threw before it ever reached showAlert — so the button looked
+// like it did nothing. This falls back to the classic hidden-textarea +
+// execCommand('copy') approach, which still works over HTTP.
+function copyTextToClipboard(text) {
+  if (
+    window.isSecureContext &&
+    navigator.clipboard &&
+    navigator.clipboard.writeText
+  ) {
+    return navigator.clipboard
+      .writeText(text)
+      .catch(() => legacyCopyText(text));
+  }
+  return legacyCopyText(text);
+}
+
+function legacyCopyText(text) {
+  return new Promise((resolve, reject) => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      if (ok) resolve();
+      else reject(new Error("execCommand copy failed"));
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
 
 function copyConfig() {
   const config = document.getElementById("viewConfigContent").value;
-  navigator.clipboard
-    .writeText(config)
+  copyTextToClipboard(config)
     .then(() => {
-      showAlert("Config copied to clipboard");
+      showInfoToast("Config copied to clipboard");
     })
     .catch(() => {
-      showAlert("Failed to copy config", "error");
+      showInfoToast("Failed to copy config", true);
     });
 }
 
 // ============ Oxidized Version History ============
+// ============ Backup History (Right Panel): grouped by date, View, Compare ============
+// Reuses the exact same endpoints as before:
+//   GET /api/oxidized/node/{name}/history   (list)
+//   GET /api/oxidized/node/{name}/version   (single backup config, used by View)
+//   GET /api/oxidized/node/{name}/diff      (used by Compare, via the existing showDiff())
+let historyState = null; // { nodeName, data, selected: [{oid, epoch, num}] }
+
+// ===== TEMP MOCK HISTORY (UI review only) =====
+// Sample versions used ONLY while developing the History layout against the
+// preview (which has no live Oxidized). MUST stay false for real use: when
+// true and the real history is empty, the UI shows FAKE backups, which hides
+// the genuine "no new backup" condition. Set false (or delete this block + the
+// two getMockHistory() calls below) to show real data only.
+const HISTORY_MOCK_ENABLED = false;
+function getMockHistory() {
+  const now = Date.now();
+  const iso = (minsAgo) => new Date(now - minsAgo * 60000).toISOString();
+  return [
+    { oid: iso(6), time: iso(6) },
+    { oid: iso(38), time: iso(38) },
+    { oid: iso(60 * 20), time: iso(60 * 20) },
+    { oid: iso(60 * 44), time: iso(60 * 44) },
+  ];
+}
+
 function viewVersionHistory(nodeName) {
-  document.getElementById("version-history-node-name").textContent = nodeName;
-  document.getElementById("versionHistoryList").innerHTML = `
-        <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 250px;"></span></div>
-        <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 250px;"></span></div>
-        <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 250px;"></span></div>
-    `;
-  document.getElementById("versionDetailContent").innerHTML =
-    '<div style="padding: 40px; text-align: center;"><span class="skeleton skeleton-inline" style="width: 200px;"></span></div>';
-  selectedVersions = [];
-  document.getElementById("versionHistoryModal").classList.add("show");
+  const slot = setActionPanelContext(nodeName, "Backup History");
+  actionPanelCurrentModal = null; // History now renders directly in the panel, no modal borrowed
+  if (!slot) return;
+  historyState = { nodeName, data: [], selected: [] };
+
+  slot.innerHTML = `
+    <div class="history-panel">
+      <div class="history-list">
+        <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 220px;"></span></div>
+        <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 220px;"></span></div>
+        <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 220px;"></span></div>
+      </div>
+    </div>
+  `;
 
   fetch(`/api/oxidized/node/${nodeName}/history`)
     .then((r) => r.json())
     .then((data) => {
-      if (Array.isArray(data) && data.length > 0) {
-        document.getElementById("versionHistoryList").innerHTML = data
-          .map((v, idx) => {
-            // Convert ISO date string "2026-04-21 07:25:45 +0000" to Unix epoch seconds
-            const dateStr = v.time || v.date || "";
-            const parsed = dateStr ? new Date(dateStr) : null;
-            const epochSecs =
-              parsed && !isNaN(parsed.getTime())
-                ? Math.round(parsed.getTime() / 1000)
-                : 0;
-            const num = data.length - idx;
-            let dateLine = "Unknown date";
-            let timeLine = "";
-            if (parsed && !isNaN(parsed.getTime())) {
-              dateLine = parsed.toLocaleDateString("id-ID", {
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              });
-              timeLine = `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
-            }
-            return `
-                <div class="backup-history-item">
-                    <input type="checkbox" class="version-checkbox" data-oid="${v.oid}" data-epoch="${epochSecs}" data-num="${num}">
-                    <div class="backup-history-text">
-                        <div class="backup-history-title">Data Backup #${num}</div>
-                        <div class="backup-history-date">${escapeHtml(dateLine)}</div>
-                        ${timeLine ? `<div class="backup-history-time">${escapeHtml(timeLine)}</div>` : ""}
-                    </div>
-                    <button class="btn" style="padding:5px 10px;font-size:11px; flex-shrink: 0;" onclick="viewVersionDetail('${nodeName}', '${v.oid}', '${epochSecs}')">View</button>
-                </div>
-            `;
-          })
-          .join("");
-      } else {
-        document.getElementById("versionHistoryList").innerHTML =
-          '<div style="padding: 20px; text-align: center; color: #666;">No version history found</div>';
-      }
+      let arr = Array.isArray(data) ? data : [];
+      if (HISTORY_MOCK_ENABLED && arr.length === 0) arr = getMockHistory();
+      historyState.data = arr;
+      renderHistoryListScreen();
     })
     .catch((err) => {
-      document.getElementById("versionHistoryList").innerHTML =
-        '<div style="padding: 20px; text-align: center; color: #dc3545;">Error: ' +
-        err.message +
-        "</div>";
+      if (HISTORY_MOCK_ENABLED) {
+        historyState.data = getMockHistory();
+        renderHistoryListScreen();
+        return;
+      }
+      slot.innerHTML = `<div class="history-empty">Error: ${escapeHtml(err.message)}</div>`;
     });
 }
 
-function viewVersionDetail(nodeName, oid, epoch) {
+// Formats a raw history timestamp into a date-group key ("23 September
+// 2026") and a separate time line ("19:04"), same style used elsewhere.
+function formatHistoryDateParts(rawDateStr) {
+  const parsed = rawDateStr ? new Date(rawDateStr) : null;
+  const valid = parsed && !isNaN(parsed.getTime());
+  return {
+    valid,
+    epochSecs: valid ? Math.round(parsed.getTime() / 1000) : 0,
+    dateKey: valid
+      ? parsed.toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
+      : "Unknown date",
+    timeLine: valid
+      ? `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`
+      : "",
+  };
+}
+
+// Renders the grouped-by-date list (the default History screen). Backups
+// stay in the order the API returns them (newest first), so both the
+// newest date group and the newest backup within a group land on top
+// without re-sorting anything. A date can hold any number of backups —
+// grouping only adds a heading, it never merges entries.
+function renderHistoryListScreen() {
+  const slot = document.querySelector(
+    "#action-detail-panel .action-panel-slot",
+  );
+  if (!slot || !historyState) return;
+  const data = historyState.data || [];
+  const selected = historyState.selected || [];
+
+  if (data.length === 0) {
+    slot.innerHTML = `<div class="history-empty">No backup history found</div>`;
+    return;
+  }
+
+  const total = data.length;
+  let itemsHtml = "";
+  let lastDateKey = null;
+  let groupOpen = false;
+
+  data.forEach((v, idx) => {
+    const { dateKey, timeLine, epochSecs } = formatHistoryDateParts(
+      v.time || v.date || "",
+    );
+    const num = total - idx;
+
+    if (dateKey !== lastDateKey) {
+      if (groupOpen) itemsHtml += `</div></div>`;
+      itemsHtml += `
+        <div class="history-date-group">
+          <div class="history-date-heading">${escapeHtml(dateKey)}</div>
+          <div class="history-date-items">
+      `;
+      lastDateKey = dateKey;
+      groupOpen = true;
+    }
+
+    const isSelected = selected.some((s) => s.oid === v.oid);
+    const disableCheckbox = !isSelected && selected.length >= 2;
+
+    itemsHtml += `
+      <div class="history-item">
+        <input
+          type="checkbox"
+          class="history-checkbox"
+          data-oid="${escapeHtml(v.oid)}"
+          data-epoch="${epochSecs}"
+          data-num="${num}"
+          ${isSelected ? "checked" : ""}
+          ${disableCheckbox ? "disabled" : ""}
+          onchange="onHistoryCheckboxChange(this)"
+        />
+        <div class="history-item-text">
+          <div class="history-item-title">Data Backup #${num}</div>
+          <div class="history-item-time">${escapeHtml(timeLine)}</div>
+        </div>
+        <button type="button" class="btn history-view-btn" onclick="viewHistoryEntry('${escapeHtml(v.oid)}')">View</button>
+      </div>
+    `;
+  });
+  if (groupOpen) itemsHtml += `</div></div>`;
+
+  const count = selected.length;
+  slot.innerHTML = `
+    <div class="history-panel">
+      <div class="history-list">${itemsHtml}</div>
+      <div class="history-compare-bar">
+        <span class="history-compare-count">${count} backup${count === 1 ? "" : "s"} selected</span>
+        <button
+          type="button"
+          class="btn btn-success"
+          ${count === 2 ? "" : "disabled"}
+          onclick="compareSelectedHistory()"
+        >
+          Compare Selected
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+// Checkbox is pure selection for Compare — never a status indicator. Once 2
+// are selected, the rest are disabled so a 3rd can't be picked.
+function onHistoryCheckboxChange(checkbox) {
+  if (!historyState) return;
+  const oid = checkbox.dataset.oid;
+  if (checkbox.checked) {
+    if (historyState.selected.length >= 2) {
+      checkbox.checked = false;
+      return;
+    }
+    historyState.selected.push({
+      oid,
+      epoch: checkbox.dataset.epoch,
+      num: checkbox.dataset.num,
+    });
+  } else {
+    historyState.selected = historyState.selected.filter((s) => s.oid !== oid);
+  }
+  renderHistoryListScreen();
+}
+
+// View = a single backup's full detail, replacing the list in the same
+// Action/Detail area (never a modal/popup).
+function viewHistoryEntry(oid) {
+  if (!historyState) return;
+  const slot = document.querySelector(
+    "#action-detail-panel .action-panel-slot",
+  );
+  if (!slot) return;
+  const entry = (historyState.data || []).find((v) => v.oid === oid);
+  const num =
+    entry != null
+      ? historyState.data.length - historyState.data.indexOf(entry)
+      : "";
+  const { dateKey, timeLine, epochSecs } = formatHistoryDateParts(
+    entry ? entry.time || entry.date || "" : "",
+  );
+
+  slot.innerHTML = `
+    <div class="history-detail">
+      <button type="button" class="history-back-btn" onclick="renderHistoryListScreen()">&larr; Back to History</button>
+      <div class="history-detail-title">BACKUP #${num}</div>
+      <div class="history-detail-meta">
+        <span>${escapeHtml(dateKey)}</span>
+        <span>${escapeHtml(timeLine)}</span>
+      </div>
+      <div class="history-detail-section-label">Status</div>
+      <div class="history-detail-status" id="history-detail-status">
+        <span class="skeleton skeleton-inline" style="width: 80px;"></span>
+      </div>
+      <div class="history-detail-section-label">Configuration</div>
+      <textarea class="history-detail-config" id="history-detail-config" readonly>Loading…</textarea>
+      <div class="history-detail-actions">
+        <button type="button" class="btn" onclick="copyVersionConfig()">Copy</button>
+      </div>
+    </div>
+  `;
+
   fetch(
-    `/api/oxidized/node/${nodeName}/version?oid=${encodeURIComponent(oid)}&epoch=${encodeURIComponent(epoch)}`,
+    `/api/oxidized/node/${historyState.nodeName}/version?oid=${encodeURIComponent(oid)}&epoch=${encodeURIComponent(epochSecs)}`,
   )
     .then((r) => r.json())
     .then((data) => {
       if (data.config) {
-        document.getElementById("versionDetailContent").innerHTML = `
-                <textarea readonly style="width: 100%; height: 280px; font-family: monospace; font-size: 12px;">${data.config}</textarea>
-                <div style="margin-top: 10px;">
-                    <button class="btn" onclick="copyVersionConfig()">📋 Copy</button>
-                </div>
-            `;
+        document.getElementById("history-detail-config").value = data.config;
+        document.getElementById("history-detail-status").innerHTML =
+          '<span class="status-text status-success">&#10003; Success</span>';
         window.currentVersionConfig = data.config;
       } else {
-        document.getElementById("versionDetailContent").innerHTML =
-          '<div style="color: #dc3545;">Failed to load version config</div>';
+        document.getElementById("history-detail-config").value = "";
+        document.getElementById("history-detail-status").innerHTML =
+          '<span class="status-text status-failed">&#10007; Failed to load</span>';
       }
+    })
+    .catch((err) => {
+      document.getElementById("history-detail-status").innerHTML =
+        `<span class="status-text status-failed">Error: ${escapeHtml(err.message)}</span>`;
     });
 }
 
 function copyVersionConfig() {
   if (window.currentVersionConfig) {
-    navigator.clipboard.writeText(window.currentVersionConfig).then(() => {
-      showAlert("Version config copied to clipboard");
-    });
+    copyTextToClipboard(window.currentVersionConfig)
+      .then(() => {
+        showInfoToast("Version config copied to clipboard");
+      })
+      .catch(() => {
+        showInfoToast("Failed to copy config", true);
+      });
   }
 }
 
-function compareVersions() {
-  const checkboxes = document.querySelectorAll(".version-checkbox:checked");
-  if (checkboxes.length !== 2) {
-    showAlert("Please select exactly 2 versions to compare", "error");
+// Compare reuses the existing diff logic untouched — showDiff()/renderSplitDiff()/
+// diffModal stay as they are; only where the result renders moved (Right Panel).
+// This just feeds it the 2 selected backups.
+function compareSelectedHistory() {
+  if (!historyState || historyState.selected.length !== 2) {
+    showInfoToast("Select exactly 2 versions to compare", true);
     return;
   }
-  const ep1 = parseInt(checkboxes[0].dataset.epoch) || 0;
-  const ep2 = parseInt(checkboxes[1].dataset.epoch) || 0;
-  const oid1 = checkboxes[0].dataset.oid;
-  const oid2 = checkboxes[1].dataset.oid;
-  const epoch1 = checkboxes[0].dataset.epoch;
-  const epoch2 = checkboxes[1].dataset.epoch;
-  const nodeName = document.getElementById(
-    "version-history-node-name",
-  ).textContent;
-
-  let oldOid, newOid, oldEpoch, newEpoch;
+  const [a, b] = historyState.selected;
+  const ep1 = parseInt(a.epoch) || 0;
+  const ep2 = parseInt(b.epoch) || 0;
+  let oldEntry, newEntry;
   if (ep1 < ep2) {
-    oldOid = oid1;
-    newOid = oid2;
-    oldEpoch = epoch1;
-    newEpoch = epoch2;
+    oldEntry = a;
+    newEntry = b;
   } else {
-    oldOid = oid2;
-    newOid = oid1;
-    oldEpoch = epoch2;
-    newEpoch = epoch1;
+    oldEntry = b;
+    newEntry = a;
   }
-
-  closeVersionHistoryModal();
-  showDiff(nodeName, oldOid, newOid, oldEpoch, newEpoch);
+  const oldParts = formatHistoryDateParts(
+    (historyState.data.find((v) => v.oid === oldEntry.oid) || {}).time || "",
+  );
+  const newParts = formatHistoryDateParts(
+    (historyState.data.find((v) => v.oid === newEntry.oid) || {}).time || "",
+  );
+  showDiff(
+    historyState.nodeName,
+    oldEntry.oid,
+    newEntry.oid,
+    oldEntry.epoch,
+    newEntry.epoch,
+    `Backup #${oldEntry.num} · ${oldParts.dateKey}`,
+    `Backup #${newEntry.num} · ${newParts.dateKey}`,
+  );
 }
 
-function showDiff(nodeName, oid1, oid2, epoch1, epoch2) {
-  document.getElementById("diff-node-name").textContent = nodeName;
-  document.getElementById("diff-versions").textContent =
-    "Left = Older | Right = Newer";
+function showDiff(nodeName, oid1, oid2, epoch1, epoch2, oldLabel, newLabel) {
+  // Set the target node before revealing, so revealDiffInContent() can label
+  // the Right Panel context with the correct device name.
+  window.diffNodeName = nodeName;
+  window.diffOid1 = oid1;
+  window.diffOid2 = oid2;
+  document.getElementById("diff-title").textContent = `Compare Versions \u2014 ${nodeName}`;
+  document.getElementById("diff-old-version-label").textContent =
+    oldLabel || "Old Version";
+  document.getElementById("diff-new-version-label").textContent =
+    newLabel || "New Version";
   document.getElementById("diff-old-content").innerHTML =
     '<div style="padding: 40px; text-align: center;"><span class="skeleton skeleton-inline" style="width: 150px;"></span></div>';
   document.getElementById("diff-new-content").innerHTML =
     '<div style="padding: 40px; text-align: center;"><span class="skeleton skeleton-inline" style="width: 150px;"></span></div>';
-  document.getElementById("diffModal").classList.add("show");
+  revealDiffInContent();
+  // Always show every line; the Show All / Show Diff toggle button was removed.
   window.diffMode = "all";
-  document.getElementById("btn-toggle-mode").textContent = "Show: All";
-
-  window.diffNodeName = nodeName;
-  window.diffOid1 = oid1;
-  window.diffOid2 = oid2;
 
   fetch(
     `/api/oxidized/node/${nodeName}/diff?oid1=${encodeURIComponent(oid1)}&oid2=${encodeURIComponent(oid2)}&epoch1=${encodeURIComponent(epoch1 || "")}&epoch2=${encodeURIComponent(epoch2 || "")}`,
@@ -826,14 +1826,6 @@ function showDiff(nodeName, oid1, oid2, epoch1, epoch2) {
         err.message +
         "</div>";
     });
-}
-
-function toggleDiffMode() {
-  if (!window.diffData) return;
-  window.diffMode = window.diffMode === "all" ? "diff" : "all";
-  document.getElementById("btn-toggle-mode").textContent =
-    window.diffMode === "all" ? "Show: All" : "Show: Diff Only";
-  renderSplitDiff(window.diffData, window.diffStats);
 }
 
 function syncScroll(source, targetId) {
@@ -926,10 +1918,65 @@ function renderSplitDiff(lines, stats) {
 
 function closeVersionHistoryModal() {
   document.getElementById("versionHistoryModal").classList.remove("show");
+  resetActionPanelIfShowing("versionHistoryModal");
+}
+
+// Tracks whether the diff was rendered into the Right Panel (normal) or fell
+// back to the center overlay (only when the panel is hidden at narrow widths).
+let diffShownInPanel = false;
+
+// Compare/Diff always renders as a full overlay in the center content area
+// (#compareViewContainer), covering the device list; closing it brings the
+// devices back. The Right Panel keeps the Backup History list + checkbox
+// selection (held in historyState) so another pair can be compared right
+// away. The exact same #diffModalContent and renderSplitDiff() logic are
+// reused — only the DOM target is the center overlay.
+function revealDiffInContent() {
+  const content = document.getElementById("diffModalContent");
+  if (!content) return;
+  const container = document.getElementById("compareViewContainer");
+  if (!container) return;
+  container.appendChild(content);
+  container.classList.add("show");
+  diffShownInPanel = false;
+
+  // The overlay lives inside the scrollable .content, so .content's own
+  // scrollbar would still show at the right edge (right next to the Close
+  // button). Lock the page scroll (and reset it to the top) while comparing.
+  const contentArea = document.querySelector(".content");
+  if (contentArea) {
+    contentArea.scrollTop = 0;
+    contentArea.classList.add("compare-open");
+  }
 }
 
 function closeDiffModal() {
-  document.getElementById("diffModal").classList.remove("show");
+  const modal = document.getElementById("diffModal");
+  const content = document.getElementById("diffModalContent");
+  const container = document.getElementById("compareViewContainer");
+
+  // Hand the diff content back to its own modal and hide the center overlay so
+  // the device list underneath reappears.
+  if (modal && content) modal.appendChild(content);
+  if (container) container.classList.remove("show");
+
+  // Restore the page-content scroll now that the overlay is gone.
+  const contentArea = document.querySelector(".content");
+  if (contentArea) contentArea.classList.remove("compare-open");
+
+  // Defensive: clear any legacy right-panel diff state.
+  const panel = document.querySelector(".right-panel");
+  if (panel) panel.classList.remove("right-panel-diff");
+  const body = document.getElementById("action-detail-panel");
+  if (body) body.classList.remove("panel-diff-mode");
+  diffShownInPanel = false;
+
+  // Bring the Backup History list back in the Right Panel (same pair still
+  // selected) so another comparison can start without re-opening history.
+  if (historyState && historyState.nodeName) {
+    const slot = setActionPanelContext(historyState.nodeName, "Backup History");
+    if (slot) renderHistoryListScreen();
+  }
 }
 
 // ============ Scheduler (automatic backup planning: global + per device/group) ============
@@ -954,6 +2001,11 @@ const SCHED_LOCAL_GLOBAL_KEY = "oxi_scheduler_global_v1";
 const SCHED_LOCAL_OVERRIDES_KEY = "oxi_scheduler_overrides_v1";
 
 function schedWarnBackendMissingOnce() {
+  // Keep the on-page banner visible for as long as the fallback is in use
+  // (it's idempotent, safe to call every time a scheduler request 404s),
+  // but only spam the console once.
+  const banner = document.getElementById("scheduler-backend-warning");
+  if (banner) banner.style.display = "block";
   if (schedulerBackendWarned) return;
   schedulerBackendWarned = true;
   console.warn(
@@ -1042,10 +2094,10 @@ function toggleCustomFrequencyInput(prefix) {
 
 function formatFrequencyLabel(days) {
   days = parseInt(days);
-  if (days === 1) return t("Daily") || "Every day";
-  if (days === 3) return t("3 Days") || "Every 3 days";
-  if (days === 7) return t("Weekly") || "Every week";
-  if (days === 30) return t("Monthly") || "Every month";
+  if (days === 1) return "Every day";
+  if (days === 3) return "Every 3 days";
+  if (days === 7) return "Every week";
+  if (days === 30) return "Every month";
   return `Every ${days} day(s)`;
 }
 
@@ -1069,7 +2121,7 @@ function updateSchedulerSummaryBadge(data) {
   const el = document.getElementById("scheduler-summary-display");
   if (!el) return;
   if (!data || data.enabled === false) {
-    el.textContent = t("sched_disabled") || "Disabled";
+    el.textContent = "Disabled";
     return;
   }
   el.textContent = `${formatFrequencyLabel(data.interval_days || 1)}${data.time ? " @ " + data.time : ""}`;
@@ -1084,10 +2136,10 @@ function applySchedulerGlobalData(data) {
   if (nextEl) {
     const statusText =
       data.enabled === false
-        ? t("sched_disabled") || "Disabled"
+        ? "Disabled"
         : `${formatFrequencyLabel(data.interval_days || 1)}${data.time ? " @ " + data.time : ""}`;
     const nextRunText = data.next_run
-      ? ` · ${t("sched_next_run") || "Next run"}: ${new Date(data.next_run).toLocaleString()}`
+      ? ` · ${"Next run"}: ${new Date(data.next_run).toLocaleString()}`
       : "";
     nextEl.textContent = statusText + nextRunText;
   }
@@ -1107,6 +2159,17 @@ function loadSchedulerSettings() {
   loadSchedulerOverrides();
 }
 
+function openGlobalSchedule() {
+  // Show in the Right Panel (like the other schedule actions), not a centered,
+  // blurred modal.
+  revealModalInActionPanel("globalScheduleModal", "", "Global Schedule");
+}
+
+function closeGlobalScheduleModal() {
+  document.getElementById("globalScheduleModal").classList.remove("show");
+  resetActionPanelIfShowing("globalScheduleModal");
+}
+
 function saveGlobalSchedule(e) {
   e.preventDefault();
   const payload = {
@@ -1115,6 +2178,30 @@ function saveGlobalSchedule(e) {
     enabled: document.getElementById("schedulerGlobalEnabled").checked,
   };
 
+  // The global schedule is all-or-nothing: saving it replaces every per-device
+  // and per-group override, so warn first when exceptions exist (destructive).
+  const overrideCount = (schedulerOverrides || []).length;
+  if (overrideCount > 0) {
+    const label = `${formatFrequencyLabel(payload.interval_days)} @ ${payload.time}`;
+    confirmAction(
+      `Saving the Global Schedule (${label}) will delete all ${overrideCount} per-device/group schedule(s) and apply this schedule to ALL groups and devices. Continue?`,
+      () => performGlobalScheduleSave(payload),
+    );
+    return;
+  }
+  performGlobalScheduleSave(payload);
+}
+
+function performGlobalScheduleSave(payload) {
+  const clearServerOverrides = () =>
+    Promise.all(
+      (schedulerOverrides || []).map((o) =>
+        schedApiRequest(`/api/scheduler/overrides/${o.id}`, {
+          method: "DELETE",
+        }).catch(() => {}),
+      ),
+    );
+
   schedApiRequest("/api/scheduler/global", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -1122,18 +2209,29 @@ function saveGlobalSchedule(e) {
   })
     .then((data) => {
       if (data.success === false) {
-        showAlert(data.error || "Failed to save global schedule", "error");
+        showInfoToast(data.error || "Failed to save global schedule", true);
         return;
       }
-      showAlert("Global schedule saved");
-      loadSchedulerSettings();
+      // Global wins over everything: drop all per-item overrides server-side.
+      clearServerOverrides().then(() => {
+        schedulerOverrides = [];
+        showInfoToast(
+          "Global Schedule Saved — all groups and devices now follow it",
+        );
+        closeGlobalScheduleModal();
+        loadSchedulerSettings();
+      });
     })
     .catch(() => {
       schedWarnBackendMissingOnce();
       schedSetLocalGlobal(payload);
-      showAlert(
-        "Global schedule saved locally (server scheduler API isn't set up yet)",
+      // Mirror the wipe in the local store so the Scheduler table reflects it.
+      schedSetLocalOverrides([]);
+      schedulerOverrides = [];
+      showInfoToast(
+        "Global Schedule Saved locally — all per-device/group schedules were cleared so everything follows the global one (server scheduler API isn't set up yet)",
       );
+      closeGlobalScheduleModal();
       loadSchedulerSettings();
     });
 }
@@ -1154,8 +2252,13 @@ function loadSchedulerOverrides() {
 function renderSchedulerOverrides(list) {
   const tbody = document.getElementById("schedulerOverridesList");
   if (!tbody) return;
-  if (!list || list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">${t("sched_no_overrides") || "No device or group specific schedules yet"}</td></tr>`;
+  list = list || [];
+  // This table now lists ONLY the individual exceptions (per-device / per-group
+  // schedules). Everything else follows the Global Schedule and is shown in the
+  // Global card's member list. Saving a Global Schedule empties this table.
+  if (list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">${"No individual schedules — every group and device follows the Global Schedule"}</td></tr>`;
+    renderGlobalMembersList();
     return;
   }
   tbody.innerHTML = list
@@ -1173,14 +2276,57 @@ function renderSchedulerOverrides(list) {
             <td>${escapeHtml(o.time || "-")}</td>
             <td>${
               o.enabled === false
-                ? `<span style="color:var(--danger);">${t("Failed") || "Disabled"}</span>`
-                : `<span style="color:var(--success);">${t("Success") || "Enabled"}</span>`
+                ? `<span style="color:var(--danger);">${"Disabled"}</span>`
+                : `<span style="color:var(--success);">${"Enabled"}</span>`
             }</td>
             <td>${o.next_run ? new Date(o.next_run).toLocaleString() : "-"}</td>
         </tr>
     `,
     )
     .join("");
+  renderGlobalMembersList();
+}
+
+// Groups & devices currently covered by the Global Schedule = everything that
+// has no individual override of its own (and, for a device, whose group isn't
+// overridden either). Kept in sync with the overrides table.
+function renderGlobalMembersList() {
+  const el = document.getElementById("schedulerGlobalMembers");
+  if (!el) return;
+  const ov = schedulerOverrides || [];
+  // Nothing carved out yet: the entire inventory follows the global schedule,
+  // so collapse it into one tidy summary instead of a chip per group/device.
+  // As soon as any group or device gets its own (non-global) schedule, this
+  // switches to enumerating exactly which groups/devices still follow global.
+  if (ov.length === 0) {
+    el.innerHTML = `<span class="global-member-chip all">All groups and devices are in the global schedule</span>`;
+    return;
+  }
+  const overriddenGroupIds = new Set(
+    ov.filter((o) => o.target_type === "group").map((o) => String(o.target_id)),
+  );
+  const overriddenNodeNames = new Set(
+    ov.filter((o) => o.target_type === "node").map((o) => String(o.target_name)),
+  );
+  const chips = [];
+  (allGroups || []).forEach((g) => {
+    if (!overriddenGroupIds.has(String(g.id))) {
+      chips.push(
+        `<span class="global-member-chip group">${escapeHtml(g.name)}</span>`,
+      );
+    }
+  });
+  (allNodes || []).forEach((n) => {
+    if (
+      overriddenGroupIds.has(String(n.group_id)) ||
+      overriddenNodeNames.has(String(n.name))
+    )
+      return;
+    chips.push(`<span class="global-member-chip">${escapeHtml(n.name)}</span>`);
+  });
+  el.innerHTML = chips.length
+    ? chips.join("")
+    : `<span class="caption">No groups or devices are on the global schedule.</span>`;
 }
 
 function onScheduleOverrideTypeChange() {
@@ -1188,18 +2334,53 @@ function onScheduleOverrideTypeChange() {
   const targetSelect = document.getElementById("scheduleOverrideTarget");
   const label = document.getElementById("scheduleOverrideTargetLabel");
   if (type === "group") {
-    if (label) label.textContent = t("group") || "Group";
+    if (label) label.textContent = "Group";
     targetSelect.innerHTML = (allGroups || [])
       .map((g) => `<option value="${g.id}">${escapeHtml(g.name)}</option>`)
       .join("");
   } else {
-    if (label) label.textContent = t("node_name") || "Device";
+    if (label) label.textContent = "Hostname";
     targetSelect.innerHTML = (allNodes || [])
       .map(
         (n) =>
           `<option value="${escapeHtml(n.name)}">${escapeHtml(n.name)}</option>`,
       )
       .join("");
+  }
+  updateSchedInheritNote();
+}
+
+// Clarifies, inside the Schedule popup, whether the picked device/group already
+// has its own schedule or is just inheriting the Global one. Without this the
+// default prefill ("Every week @ 02:00") looked identical to the global
+// schedule, so saving a global schedule appeared to have overwritten every
+// group — in reality group/device overrides are stored separately and are
+// never touched by a global save.
+function updateSchedInheritNote() {
+  const note = document.getElementById("schedInheritNote");
+  if (!note) return;
+  const type = document.getElementById("scheduleOverrideType").value;
+  const targetVal = document.getElementById("scheduleOverrideTarget").value;
+  const kind = type === "group" ? "group" : "device";
+  const existing = targetVal
+    ? findScheduleOverrideForTarget(type, targetVal)
+    : null;
+  // Reflect the live Global form fields so the note matches what the user set.
+  const gDays = frequencyDaysFromSelect("schedulerGlobal");
+  const gTime = document.getElementById("schedulerGlobalTime").value || "02:00";
+  const gLabel = `${formatFrequencyLabel(gDays)} @ ${gTime}`;
+  if (existing) {
+    note.className = "sched-inherit-note has-own";
+    note.innerHTML =
+      `This ${kind} has its <strong>own schedule</strong> ` +
+      `(${formatFrequencyLabel(existing.interval_days)} @ ${existing.time || "02:00"}) that currently overrides the Global Schedule. ` +
+      `Heads up: <strong>saving a new Global Schedule will remove this exception</strong> and make this ${kind} follow the global one.`;
+  } else {
+    note.className = "sched-inherit-note follows";
+    note.innerHTML =
+      `No individual schedule yet — this ${kind} follows the <strong>Global Schedule</strong> ` +
+      `(<strong>${escapeHtml(gLabel)}</strong>). Saving here creates a separate schedule for this ${kind} only; ` +
+      `the Global Schedule and other groups/devices stay unchanged.`;
   }
 }
 
@@ -1221,11 +2402,32 @@ function openDeviceOrGroupSchedule(type, target) {
 }
 
 function openScheduleOverrideModal(id, presetType, presetTarget) {
-  document.getElementById("scheduleOverrideModal").classList.add("show");
+  let contextName = presetTarget || "";
+  if (presetType === "group" && presetTarget) {
+    const g = (allGroups || []).find(
+      (grp) => String(grp.id) === String(presetTarget),
+    );
+    contextName = g ? g.name : presetTarget;
+  } else if (id) {
+    const existing = schedulerOverrides.find(
+      (o) => String(o.id) === String(id),
+    );
+    if (existing) {
+      contextName =
+        existing.target_type === "group"
+          ? existing.target_name
+          : existing.target_name;
+    }
+  }
+  revealModalInActionPanel(
+    "scheduleOverrideModal",
+    contextName,
+    "Schedule Backup",
+  );
   document.getElementById("editScheduleOverrideId").value = id || "";
   document.getElementById("schedule-override-title").textContent = id
-    ? t("sched_edit_override") || "Edit Schedule Override"
-    : t("sched_add_override") || "Add Schedule Override";
+    ? "Edit Schedule Override"
+    : "Add Schedule Override";
 
   document.getElementById("scheduleOverrideType").value = presetType || "node";
   onScheduleOverrideTypeChange();
@@ -1253,6 +2455,8 @@ function openScheduleOverrideModal(id, presetType, presetTarget) {
     document.getElementById("scheduleOverrideTarget").value = presetTarget;
   }
 
+  updateSchedInheritNote();
+
   // Only an existing schedule can be removed; add/remove that action here so
   // the whole lifecycle (create/edit/delete) stays on the device/group popup.
   const cancelBtn = document.getElementById("sched-override-cancel");
@@ -1263,8 +2467,8 @@ function openScheduleOverrideModal(id, presetType, presetTarget) {
       removeBtn = document.createElement("button");
       removeBtn.type = "button";
       removeBtn.id = "sched-override-remove";
-      removeBtn.className = "btn btn-danger";
-      removeBtn.textContent = t("delete") || "Remove Schedule";
+      removeBtn.className = "btn btn-danger flex-1";
+      removeBtn.textContent = "Delete";
       actionsRow.appendChild(removeBtn);
     }
     if (removeBtn) {
@@ -1281,6 +2485,31 @@ function openScheduleOverrideModal(id, presetType, presetTarget) {
 
 function closeScheduleOverrideModal() {
   document.getElementById("scheduleOverrideModal").classList.remove("show");
+  resetActionPanelIfShowing("scheduleOverrideModal");
+}
+
+// When a GROUP schedule is saved, devices in that group whose individual
+// schedule is identical to the group's become redundant: they are removed so
+// those devices simply follow the group schedule. Device schedules that
+// differ (e.g. group weekly vs device every-3-days) are kept — the device
+// override still wins over the group.
+function findRedundantNodeOverrides(list, groupName, sched) {
+  // Nodes carry their group as group_name (+ group_id when loaded from the
+  // API), so membership is matched on the id first and the name as fallback.
+  const inGroup = (n) =>
+    (sched.target_id != null &&
+      String(n.group_id) === String(sched.target_id)) ||
+    (n.group_name || n.group) === groupName;
+  const members = new Set(
+    (allNodes || []).filter(inGroup).map((n) => n.name),
+  );
+  return (list || []).filter(
+    (o) =>
+      o.target_type === "node" &&
+      members.has(o.target_name) &&
+      String(o.interval_days) === String(sched.interval_days) &&
+      (o.time || "") === (sched.time || ""),
+  );
 }
 
 function saveScheduleOverride(e) {
@@ -1290,7 +2519,7 @@ function saveScheduleOverride(e) {
   const targetValue = document.getElementById("scheduleOverrideTarget").value;
 
   if (!targetValue) {
-    showAlert("Please select a device or group", "error");
+    showInfoToast("Please select a device or group", true);
     return;
   }
 
@@ -1315,6 +2544,7 @@ function saveScheduleOverride(e) {
   const url = id
     ? `/api/scheduler/overrides/${id}`
     : "/api/scheduler/overrides";
+  let mergedCount = 0;
 
   schedApiRequest(url, {
     method: method,
@@ -1323,12 +2553,39 @@ function saveScheduleOverride(e) {
   })
     .then((data) => {
       if (data.success === false) {
-        showAlert(data.error || "Failed to save schedule", "error");
+        showInfoToast(data.error || "Failed to save schedule", true);
         return;
       }
-      showAlert(id ? "Schedule updated" : "Schedule added");
-      closeScheduleOverrideModal();
-      loadSchedulerOverrides();
+      const done = () => {
+        showInfoToast(
+          (id ? "Schedule Override Updated" : "Schedule Override Added") +
+            ` (${resolvedTargetName})` +
+            (mergedCount
+              ? ` — ${mergedCount} identical device schedule(s) now follow the group`
+              : ""),
+        );
+        closeScheduleOverrideModal();
+        loadSchedulerOverrides();
+      };
+      if (targetType === "group") {
+        const redundants = findRedundantNodeOverrides(
+          schedulerOverrides,
+          resolvedTargetName,
+          payload,
+        );
+        if (redundants.length) {
+          mergedCount = redundants.length;
+          Promise.all(
+            redundants.map((o) =>
+              schedApiRequest(`/api/scheduler/overrides/${o.id}`, {
+                method: "DELETE",
+              }).catch(() => {}),
+            ),
+          ).then(done);
+          return;
+        }
+      }
+      done();
     })
     .catch(() => {
       schedWarnBackendMissingOnce();
@@ -1344,10 +2601,28 @@ function saveScheduleOverride(e) {
         );
         list.push(payload);
       }
+      // Local mirror of the group-inheritance rule (see above).
+      if (targetType === "group") {
+        const redundantIds = new Set(
+          findRedundantNodeOverrides(list, resolvedTargetName, payload).map(
+            (o) => String(o.id),
+          ),
+        );
+        if (redundantIds.size) {
+          mergedCount = redundantIds.size;
+          for (let i = list.length - 1; i >= 0; i--) {
+            if (redundantIds.has(String(list[i].id))) list.splice(i, 1);
+          }
+        }
+      }
       schedSetLocalOverrides(list);
-      showAlert(
-        (id ? "Schedule updated" : "Schedule added") +
-          " locally (server scheduler API isn't set up yet)",
+      showInfoToast(
+        (id ? "Schedule Override Updated" : "Schedule Override Added") +
+          ` (${resolvedTargetName})` +
+          " locally (server scheduler API isn't set up yet)" +
+          (mergedCount
+            ? ` — ${mergedCount} identical device schedule(s) now follow the group`
+            : ""),
       );
       closeScheduleOverrideModal();
       loadSchedulerOverrides();
@@ -1355,44 +2630,109 @@ function saveScheduleOverride(e) {
 }
 
 function deleteScheduleOverride(id) {
-  if (!confirm("Delete this schedule override?")) return;
-  schedApiRequest(`/api/scheduler/overrides/${id}`, { method: "DELETE" })
-    .then((data) => {
-      if (data.success === false) {
-        showAlert(data.error || "Failed to delete schedule", "error");
-        return;
-      }
-      showAlert("Schedule override deleted");
-      loadSchedulerOverrides();
-    })
-    .catch(() => {
-      schedWarnBackendMissingOnce();
-      const list = schedGetLocalOverrides().filter(
-        (o) => String(o.id) !== String(id),
-      );
-      schedSetLocalOverrides(list);
-      showAlert("Schedule override deleted (local only)");
-      loadSchedulerOverrides();
-    });
+  // Name the target (device or group) in the popup so it's clear which
+  // schedule is being removed. Blocking: Delete/Cancel must be picked first.
+  const ov = (schedulerOverrides || []).find(
+    (o) => String(o.id) === String(id),
+  );
+  const label = ov && ov.target_name ? ` (${ov.target_name})` : "";
+  confirmAction(
+    `Delete this backup schedule${label}? This cannot be undone.`,
+    () => {
+      schedApiRequest(`/api/scheduler/overrides/${id}`, { method: "DELETE" })
+        .then((data) => {
+          if (data.success === false) {
+            showInfoToast(data.error || "Failed to delete schedule", true);
+            return;
+          }
+          showInfoToast(`Schedule Override Deleted${label}`);
+          loadSchedulerOverrides();
+        })
+        .catch(() => {
+          schedWarnBackendMissingOnce();
+          const list = schedGetLocalOverrides().filter(
+            (o) => String(o.id) !== String(id),
+          );
+          schedSetLocalOverrides(list);
+          showInfoToast(`Schedule Override Deleted${label}`);
+          loadSchedulerOverrides();
+        });
+    },
+    { danger: true, confirmLabel: "Delete", blocking: true },
+  );
 }
 
 // ============ Trigger Backup ============
-function triggerBackup(nodeName) {
-  if (!confirm(`Trigger backup for ${nodeName}?`)) return;
+// Status flows Triggered -> Waiting -> Success/Failed and is shown directly
+// in the Dashboard table's Status column, plus a bottom pop-up toast naming the
+// device for the final result (the pop-up is a fixed overlay, so the table never
+// shifts). Latest Backup only changes once a backup actually succeeds. Exactly
+// one Activity Log entry is written per trigger, for the final result only —
+// never one for each intermediate state.
+function setTriggerStatus(nodeName, state) {
+  if (state) {
+    triggerStatusOverrides[nodeName] = state;
+  } else {
+    delete triggerStatusOverrides[nodeName];
+  }
+  refreshNodeDisplays();
+}
 
-  showAlert(`Triggering backup for ${nodeName}...`, "info");
+// Re-renders the unified Devices view from data already in memory (no re-fetch).
+function refreshNodeDisplays() {
+  renderDevices();
+}
+
+function triggerBackup(nodeName) {
+  confirmAction(`Trigger backup for ${nodeName}?`, () =>
+    doTriggerBackup(nodeName),
+  );
+}
+
+function doTriggerBackup(nodeName) {
+  setTriggerStatus(nodeName, "triggered");
+  // One Activity Log entry for this whole trigger: starts as "pending"
+  // (Waiting) and gets updated in place below — never a second entry, and
+  // the Action/Detail section above Activity Log is never opened for this.
+  const logId = addPendingActivityLogEntry(nodeName);
+
+  // Brief "Triggered" flash before "Waiting", matching the required flow.
+  // Guarded so it can't clobber a result that already arrived by then.
+  setTimeout(() => {
+    if (triggerStatusOverrides[nodeName] === "triggered") {
+      setTriggerStatus(nodeName, "waiting");
+    }
+  }, 400);
+
   fetch(`/api/oxidized/node/${nodeName}/backup`, { method: "POST" })
     .then((r) => r.json())
     .then((data) => {
+      const now = Date.now();
       if (data.success) {
-        showAlert(`Backup triggered for ${nodeName}`);
-        setTimeout(refreshOxidizedStatus, 2000);
+        // Only a successful backup updates Latest Backup.
+        oxidizedStatus[nodeName] = Object.assign(
+          {},
+          oxidizedStatus[nodeName],
+          { status: "success", last: { end: new Date(now).toISOString() } },
+        );
+        setTriggerStatus(nodeName, null);
+        updateActivityLogEntry(logId, "success", now);
+        showInfoToast(`Backup completed (${nodeName})`);
       } else {
-        showAlert(`Failed to trigger backup: ${data.error}`, "error");
+        oxidizedStatus[nodeName] = Object.assign(
+          {},
+          oxidizedStatus[nodeName],
+          { status: "failed" },
+        );
+        setTriggerStatus(nodeName, null);
+        updateActivityLogEntry(logId, "failed", now);
+        showInfoToast(`Backup failed (${nodeName})`, true);
       }
     })
-    .catch((err) => {
-      showAlert(`Error: ${err.message}`, "error");
+    .catch(() => {
+      setTriggerStatus(nodeName, null);
+      updateActivityLogEntry(logId, "failed", Date.now());
+      showInfoToast(`Backup failed (${nodeName})`, true);
     });
 }
 
@@ -1409,6 +2749,9 @@ function openEditModal(name) {
       const credSelect = document.getElementById("editNodeCredential");
       credSelect.innerHTML = '<option value="">Select credential</option>';
       creds.forEach((c) => {
+        // Only enabled credentials are selectable when editing a device,
+        // matching the Add Device dropdown.
+        if (c.enabled === false) return;
         const opt = document.createElement("option");
         opt.value = c.id;
         opt.textContent = `${c.label} (${c.username})`;
@@ -1422,12 +2765,12 @@ function openEditModal(name) {
         .forEach((m) => {
           const opt = document.createElement("option");
           opt.value = m.id;
-          opt.textContent = `${m.id} - ${m.name}`;
+          opt.textContent = formatModelDisplay(m.name);
           modelSelect.appendChild(opt);
         });
 
       const groupSelect = document.getElementById("editNodeGroup");
-      groupSelect.innerHTML = '<option value="">No Group</option>';
+      groupSelect.innerHTML = '<option value="">Select a group…</option>';
       groupsData.groups.forEach((g) => {
         const opt = document.createElement("option");
         opt.value = g.id;
@@ -1448,18 +2791,26 @@ function openEditModal(name) {
       document.getElementById("editNodeUsername").value = node.username || "";
       document.getElementById("editNodePassword").value = node.password || "";
       document.getElementById("editNodeGroup").value = node.group_id || "";
-      document.getElementById("editModal").classList.add("show");
+      revealModalInActionPanel("editModal", name, "Edit Node");
     });
 }
 
 function closeEditModal() {
   document.getElementById("editModal").classList.remove("show");
+  resetActionPanelIfShowing("editModal");
 }
 
 function updateNode(e) {
   e.preventDefault();
   const nodeName = document.getElementById("editNodeName").value;
   const groupId = document.getElementById("editNodeGroup").value;
+  if (!groupId) {
+    showInfoToast(
+      "A device must be assigned to a group. Select a group (or add one).",
+      true,
+    );
+    return;
+  }
   const node = {
     name: nodeName,
     ip: document.getElementById("editNodeIp").value,
@@ -1478,52 +2829,116 @@ function updateNode(e) {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert(t("success_update_node"));
+        showInfoToast(`Device updated (${nodeName})`);
         closeEditModal();
         refreshNodes();
+        logActivityEvent(nodeName, "Node Updated Successfully");
+      } else {
+        showInfoToast(data.error || "Failed to update device", true);
       }
     });
 }
 
 function addNode(e) {
   e.preventDefault();
-  const groupId = document.getElementById("nodeGroup").value;
-  const node = {
-    name: document.getElementById("nodeName").value,
-    ip: document.getElementById("nodeIp").value,
-    model: document.getElementById("nodeModel").value,
-    protocol: document.getElementById("nodeProtocol").value,
-    port: document.getElementById("nodePort").value,
-    username: document.getElementById("nodeUsername").value,
-    password: document.getElementById("nodePassword").value,
-    group_id: groupId ? parseInt(groupId) : null,
-  };
-  fetch("/api/nodes", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(node),
-  })
-    .then((r) => r.json())
-    .then((data) => {
-      if (data.success) {
-        showAlert(t("success_add_node"));
-        e.target.reset();
-        refreshNodes();
+  const form = e.target;
+  const creatingGroup = isCreatingNewGroup();
+  const creatingCred = isCreatingNewCredential();
+  let groupId = document.getElementById("nodeGroup").value;
+  let newCred = null;
+
+  // A group must exist before the device is saved, so it is created first when
+  // the user chose "＋ Create new group…". Same for a new credential.
+  let chain = Promise.resolve();
+  if (creatingGroup) {
+    chain = chain
+      .then(() => createGroupInline())
+      .then((id) => {
+        groupId = id != null ? String(id) : "";
+      });
+  }
+  if (creatingCred) {
+    chain = chain
+      .then(() => createCredentialInline())
+      .then((c) => {
+        newCred = c;
+      });
+  }
+
+  chain
+    .then(() => {
+      if (!groupId) {
+        showInfoToast(
+          "A device must be assigned to a group. Select a group or create a new one.",
+          true,
+        );
+        return;
       }
+      const node = {
+        name: document.getElementById("nodeName").value,
+        ip: document.getElementById("nodeIp").value,
+        model: document.getElementById("nodeModel").value,
+        protocol: document.getElementById("nodeProtocol").value,
+        port: document.getElementById("nodePort").value,
+        username: newCred
+          ? newCred.username
+          : document.getElementById("nodeUsername").value,
+        password: newCred
+          ? newCred.password
+          : document.getElementById("nodePassword").value,
+        group_id: parseInt(groupId),
+      };
+      return fetch("/api/nodes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(node),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success) {
+            showInfoToast(`Device Added (${node.name})`);
+            form.reset();
+            closeInlineGroupForm(true);
+            closeInlineCredForm(true);
+            if (creatingGroup) loadGroups();
+            if (creatingCred) loadCredentials();
+            loadGroupsToSelect("nodeGroup");
+            loadCredentialsToSelect("nodeCredential");
+            refreshNodes();
+          } else {
+            showInfoToast(data.error || "Failed to add device", true);
+          }
+        });
+    })
+    .catch((err) => {
+      showInfoToast(
+        err && err.message ? err.message : "Failed to save device",
+        true,
+      );
     });
 }
 
 function deleteNode(name) {
-  if (confirm(t("confirm_delete"))) {
-    fetch(`/api/nodes/${name}`, { method: "DELETE" })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success) {
-          showAlert(t("success_delete_node"));
-          refreshNodes();
-        }
-      });
-  }
+  // Blocking confirmation popup (same bottom-toast style as Restart, but with a
+  // backdrop): the user must pick Delete or Cancel before doing anything else.
+  confirmAction(
+    `Delete this device (${name})? This cannot be undone.`,
+    () => performNodeDelete(name),
+    { danger: true, confirmLabel: "Delete", blocking: true },
+  );
+}
+
+function performNodeDelete(name) {
+  fetch(`/api/nodes/${name}`, { method: "DELETE" })
+    .then((r) => r.json())
+    .then((data) => {
+      if (data.success) {
+        showInfoToast(`Device deleted (${name})`);
+        refreshNodes();
+        if (currentPanelDevice === name) currentPanelDevice = null;
+        renderActionPanelPlaceholder();
+      }
+    });
 }
 
 function importNodes(e) {
@@ -1537,7 +2952,7 @@ function importNodes(e) {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert("Successfully imported " + data.count + " nodes");
+        showInfoToast("Successfully imported " + data.count + " nodes");
         document.getElementById("csvContent").value = "";
         refreshNodes();
       }
@@ -1545,13 +2960,38 @@ function importNodes(e) {
 }
 
 // ============ Users ============
+// "2026-11-04 08:12:37" -> "Wed, 04 Nov 2026": weekday, day, month, year
+// only — the users table Created column never shows clock time.
+function formatCreatedDate(value) {
+  if (!value) return "-";
+  const d = new Date(String(value).replace(" ", "T"));
+  if (isNaN(d.getTime())) return value;
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${days[d.getDay()]}, ${dd} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 function loadUsers() {
   fetch("/api/users")
     .then((r) => r.json())
     .then((users) => {
       const tbody = document.getElementById("usersList");
       if (users.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="3">${t("no_data") || "No users"}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="3">${"-"}</td></tr>`;
         return;
       }
       tbody.innerHTML = users
@@ -1559,11 +2999,11 @@ function loadUsers() {
           (user) => `
             <tr>
                 <td>${escapeHtml(user.username)}</td>
-                <td>${user.created || t("no_data")}</td>
+                <td>${formatCreatedDate(user.created_at)}</td>
                 <td>
                     <div class="btn-group">
-                        <button class="btn" style="padding:5px 10px;font-size:12px;" onclick="openUserChangePasswordModal('${user.username}')">${t("change_password")}</button>
-                        <button class="btn btn-danger" style="padding:5px 10px;font-size:12px;" onclick="deleteUser('${user.username}')">${t("delete")}</button>
+                        <button class="btn" style="padding:5px 10px;font-size:12px;" onclick="openUserChangePasswordForm('${user.username}')">${"Change Password"}</button>
+                        <button class="btn btn-danger" style="padding:5px 10px;font-size:12px;" onclick="deleteUser('${user.username}')">${"Delete"}</button>
                     </div>
                 </td>
             </tr>
@@ -1573,12 +3013,18 @@ function loadUsers() {
     });
 }
 
-function openAddUserModal() {
-  document.getElementById("addUserModal").classList.add("show");
+// Add User is an inline form under the users table (no modal/blur, no
+// right panel) — opening just reveals it, closing also clears the fields.
+function openAddUserForm() {
+  document.getElementById("addUserForm").classList.add("show");
+  const u = document.getElementById("addUserUsername");
+  if (u) u.focus();
 }
 
-function closeAddUserModal() {
-  document.getElementById("addUserModal").classList.remove("show");
+function closeAddUserForm() {
+  document.getElementById("addUserForm").classList.remove("show");
+  document.getElementById("addUserUsername").value = "";
+  document.getElementById("addUserPassword").value = "";
 }
 
 function handleAddUser(e) {
@@ -1587,7 +3033,7 @@ function handleAddUser(e) {
   const password = document.getElementById("addUserPassword").value;
 
   if (password.length < 6) {
-    showAlert(t("error_password_short"), "error");
+    showInfoToast("Password must be at least 6 characters", true);
     return;
   }
 
@@ -1599,40 +3045,96 @@ function handleAddUser(e) {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert(t("success_add_user"));
-        closeAddUserModal();
-        document.getElementById("addUserUsername").value = "";
-        document.getElementById("addUserPassword").value = "";
+        // Popup notification that names the added user (Users tab convention).
+        showInfoToast(`User added successfully (${username})`);
+        closeAddUserForm();
         loadUsers();
       } else {
-        showAlert(data.error, "error");
+        showInfoToast(data.error || "Failed to add user", true);
       }
     });
 }
 
 function deleteUser(username) {
-  if (confirm(t("confirm_delete"))) {
-    fetch(`/api/users/${username}`, { method: "DELETE" })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success) {
-          showAlert(t("success_delete_user"));
-          loadUsers();
-        }
-      });
+  // Blocking confirm popup that names the user, then a success popup.
+  confirmAction(
+    `Delete this user (${username})? This cannot be undone.`,
+    () => {
+      fetch(`/api/users/${encodeURIComponent(username)}`, { method: "DELETE" })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success) {
+            closeUserChangePasswordForm();
+            showInfoToast(`User deleted (${username})`);
+            loadUsers();
+          } else {
+            showInfoToast(data.error || "Failed to delete user", true);
+          }
+        });
+    },
+    { danger: true, confirmLabel: "Delete", blocking: true },
+  );
+}
+
+// Change Password opens as an inline form directly UNDER the clicked user's
+// row (no modal/blur): Username | New Password | Confirm Password across one
+// row, then Save | Cancel. Only one form row is open at a time.
+let userCpFormRow = null;
+
+function closeUserChangePasswordForm() {
+  if (userCpFormRow) {
+    userCpFormRow.remove();
+    userCpFormRow = null;
   }
 }
 
-function openUserChangePasswordModal(username) {
-  document.getElementById("userChangePasswordUsername").value = username;
-  document.getElementById("userChangePasswordNew").value = "";
-  document.getElementById("userChangePasswordConfirm").value = "";
-  document.getElementById("userChangePasswordAlert").style.display = "none";
-  document.getElementById("userChangePasswordModal").classList.add("show");
-}
-
-function closeUserChangePasswordModal() {
-  document.getElementById("userChangePasswordModal").classList.remove("show");
+function openUserChangePasswordForm(username) {
+  closeUserChangePasswordForm();
+  let target = null;
+  document.querySelectorAll("#usersList tr").forEach((r) => {
+    if (r.cells.length && r.cells[0].textContent.trim() === username) {
+      target = r;
+    }
+  });
+  if (!target) return;
+  const tr = document.createElement("tr");
+  tr.className = "user-cp-form-row";
+  tr.innerHTML = `
+    <td colspan="3">
+      <div class="inline-subform show">
+        <div id="userChangePasswordAlert" class="alert"></div>
+        <form onsubmit="handleUserChangePassword(event)">
+          <div class="user-cp-grid">
+            <div class="form-group">
+              <label>Username</label>
+              <input type="text" id="userChangePasswordUsername" value="${escapeHtml(username)}" readonly class="bg-muted" />
+            </div>
+            <div class="form-group">
+              <label>New Password</label>
+              <div class="password-input-group">
+                <input type="password" id="userChangePasswordNew" required autocomplete="off" />
+                <button type="button" class="password-toggle" onclick="togglePasswordVisibility('userChangePasswordNew')">${PASSWORD_EYE_OPEN}</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Confirm New Password</label>
+              <div class="password-input-group">
+                <input type="password" id="userChangePasswordConfirm" required autocomplete="off" />
+                <button type="button" class="password-toggle" onclick="togglePasswordVisibility('userChangePasswordConfirm')">${PASSWORD_EYE_OPEN}</button>
+              </div>
+            </div>
+          </div>
+          <div class="flex-gap10 mt-10">
+            <button type="submit" class="btn btn-success">Save</button>
+            <button type="button" class="btn" onclick="closeUserChangePasswordForm()">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </td>`;
+  target.after(tr);
+  userCpFormRow = tr;
+  const np = document.getElementById("userChangePasswordNew");
+  if (np) np.focus();
 }
 
 function handleUserChangePassword(e) {
@@ -1642,16 +3144,16 @@ function handleUserChangePassword(e) {
   const confirm = document.getElementById("userChangePasswordConfirm").value;
   const alertDiv = document.getElementById("userChangePasswordAlert");
 
-  if (newPass.length < 6) {
+  if (newPass.length < 8) {
     alertDiv.className = "alert error";
-    alertDiv.textContent = t("error_password_short");
+    alertDiv.textContent = "Password must be at least 8 characters";
     alertDiv.style.display = "block";
     return;
   }
 
   if (newPass !== confirm) {
     alertDiv.className = "alert error";
-    alertDiv.textContent = t("error_password_mismatch");
+    alertDiv.textContent = "Passwords do not match";
     alertDiv.style.display = "block";
     return;
   }
@@ -1659,67 +3161,26 @@ function handleUserChangePassword(e) {
   fetch("/api/users-admin-change-password", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: username, new_password: newPass }),
+    // The API re-checks the confirmation server-side, so it must be sent
+    // along (the old modal omitted it and every change silently failed).
+    body: JSON.stringify({
+      username: username,
+      new_password: newPass,
+      confirm_password: confirm,
+    }),
   })
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert(t("success_change_password"));
-        closeUserChangePasswordModal();
+        // Popup that names the user whose password changed, then the inline
+        // form row closes and the table reloads.
+        closeUserChangePasswordForm();
+        showInfoToast(`Password changed successfully (${username})`);
         loadUsers();
       } else {
         alertDiv.className = "alert error";
         alertDiv.textContent = data.error || "Failed to change password";
         alertDiv.style.display = "block";
-      }
-    });
-}
-
-// ============ Change Password (Self) ============
-function openChangePasswordModal() {
-  document.getElementById("changePasswordModal").classList.add("show");
-}
-
-function closeChangePasswordModal() {
-  document.getElementById("changePasswordModal").classList.remove("show");
-  document.getElementById("changePasswordCurrent").value = "";
-  document.getElementById("changePasswordNew").value = "";
-  document.getElementById("changePasswordConfirm").value = "";
-}
-
-function handleChangePassword(e) {
-  e.preventDefault();
-  const current = document.getElementById("changePasswordCurrent").value;
-  const newPass = document.getElementById("changePasswordNew").value;
-  const confirm = document.getElementById("changePasswordConfirm").value;
-
-  if (newPass.length < 6) {
-    showAlert(t("error_password_short"), "error");
-    return;
-  }
-
-  if (newPass !== confirm) {
-    showAlert(t("error_password_mismatch"), "error");
-    return;
-  }
-
-  if (newPass === current) {
-    showAlert(t("error_password_same"), "error");
-    return;
-  }
-
-  fetch("/api/change-password", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ current_password: current, new_password: newPass }),
-  })
-    .then((r) => r.json())
-    .then((data) => {
-      if (data.success) {
-        showAlert(t("success_change_password"));
-        closeChangePasswordModal();
-      } else {
-        showAlert(data.error, "error");
       }
     });
 }
@@ -1737,7 +3198,7 @@ function loadGroups() {
     .then(([groupsData, nodes]) => {
       allGroups = groupsData.groups || [];
       if (!allNodes || !allNodes.length) allNodes = nodes;
-      renderGroupsWithNodes(allGroups, allNodes || []);
+      renderDevices();
     })
     .catch((err) => {
       console.error("Failed to load groups:", err);
@@ -1747,94 +3208,42 @@ function loadGroups() {
     });
 }
 
-// Renders each group as its own card, with a table of the devices assigned to it
-function renderGroupsWithNodes(groups, nodes) {
-  closeAllActionMenus();
-  const container = document.getElementById("groups-sections");
-  if (!container) return;
-
-  if (!groups || groups.length === 0) {
-    container.innerHTML = `<div class="group-section-empty" id="groups-empty-msg">No groups yet. Click "Add Group" to create one.</div>`;
-    return;
-  }
-
-  container.innerHTML = groups
-    .map((g) => {
-      const groupNodes = (nodes || []).filter(
-        (n) => String(n.group_id) === String(g.id),
-      );
-      return `
-        <div class="group-section">
-            <div class="group-section-header">
-                <div class="group-section-title">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M3 21V10l9-7 9 7v11h-6v-7H9v7H3z"/></svg>
-                    <span>${escapeHtml(g.name)}</span>
-                    ${g.description ? `<span class="group-section-desc">${escapeHtml(g.description)}</span>` : ""}
-                    <span class="group-section-count">${groupNodes.length} ${groupNodes.length === 1 ? "device" : "devices"}</span>
-                </div>
-                <div class="btn-group">
-                    <button class="btn" style="padding:5px 10px;font-size:12px;" onclick="openDeviceOrGroupSchedule('group', '${g.id}')">Schedule</button>
-                    <button class="btn" style="padding:5px 10px;font-size:12px;" onclick="openEditGroupModal(${g.id}, '${escapeHtml(g.name)}', '${escapeHtml(g.description || "")}')">Edit</button>
-                    <button class="btn btn-danger" style="padding:5px 10px;font-size:12px;" onclick="deleteGroup(${g.id})">Delete</button>
-                </div>
-            </div>
-            ${
-              groupNodes.length === 0
-                ? `<div class="group-section-empty">No devices in this group yet</div>`
-                : `
-            <table>
-                <thead>
-                    <tr>
-                        <th>${t("device") || "Device"}</th>
-                        <th>${t("device_model") || "Model"}</th>
-                        <th>${t("connection") || "Connection"}</th>
-                        <th>${t("group") || "Group"}</th>
-                        <th>${t("Status") || "Status"}</th>
-                        <th>${t("latest_backup") || "Latest Backup"}</th>
-                        <th>${t("action") || "Action"}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${groupNodes.map(renderNodeRow).join("")}
-                </tbody>
-            </table>`
-            }
-        </div>`;
-    })
-    .join("");
-}
+// (renderGroupsWithNodes was replaced by renderDevices() — the unified Devices view.)
 
 function openAddGroupModal() {
-  document.getElementById("group-modal-title").textContent = t("grp_add_title");
-  document.getElementById("grp-name-label").textContent = t("grp_name_label");
-  document.getElementById("grp-desc-label").textContent = t("grp_desc_label");
+  document.getElementById("group-modal-title").textContent = "Add Group";
+  document.getElementById("grp-name-label").textContent = "Group Name";
+  document.getElementById("grp-desc-label").textContent = "Description";
   document.getElementById("groupDescription").placeholder =
-    t("grp_optional_desc");
-  document.getElementById("grp-save").textContent = t("grp_save");
-  document.getElementById("grp-cancel").textContent = t("grp_cancel");
+    "Optional description";
+  document.getElementById("grp-save").textContent = "Save";
+  document.getElementById("grp-cancel").textContent = "Cancel";
   document.getElementById("editGroupId").value = "";
   document.getElementById("groupName").value = "";
   document.getElementById("groupDescription").value = "";
-  document.getElementById("groupModal").classList.add("show");
+  // Show in the Right Panel (like device edit), not a centered, blurred modal.
+  revealModalInActionPanel("groupModal", "", "Add Group");
 }
 
 function openEditGroupModal(id, name, description) {
   document.getElementById("group-modal-title").textContent =
-    t("grp_edit_title");
-  document.getElementById("grp-name-label").textContent = t("grp_name_label");
-  document.getElementById("grp-desc-label").textContent = t("grp_desc_label");
+    "Edit Group";
+  document.getElementById("grp-name-label").textContent = "Group Name";
+  document.getElementById("grp-desc-label").textContent = "Description";
   document.getElementById("groupDescription").placeholder =
-    t("grp_optional_desc");
-  document.getElementById("grp-save").textContent = t("grp_save");
-  document.getElementById("grp-cancel").textContent = t("grp_cancel");
+    "Optional description";
+  document.getElementById("grp-save").textContent = "Save";
+  document.getElementById("grp-cancel").textContent = "Cancel";
   document.getElementById("editGroupId").value = id;
   document.getElementById("groupName").value = name;
   document.getElementById("groupDescription").value = description || "";
-  document.getElementById("groupModal").classList.add("show");
+  // Edit appears in the Right Panel and names the group in the panel title.
+  revealModalInActionPanel("groupModal", name, "Edit Group");
 }
 
 function closeGroupModal() {
   document.getElementById("groupModal").classList.remove("show");
+  resetActionPanelIfShowing("groupModal");
 }
 
 function saveGroup(e) {
@@ -1844,7 +3253,7 @@ function saveGroup(e) {
   const description = document.getElementById("groupDescription").value.trim();
 
   if (!name) {
-    showAlert("Group name is required", "error");
+    showInfoToast("Group name is required", true);
     return;
   }
 
@@ -1860,34 +3269,45 @@ function saveGroup(e) {
     .then((r) => r.json())
     .then((data) => {
       if (data.success || data.id) {
-        showAlert(id ? "Group updated" : "Group created");
+        showInfoToast(id ? `Group Updated (${name})` : `Group Created (${name})`);
         closeGroupModal();
         loadGroups();
-        loadGroupsToSelect("nodeGroup");
+        if (id) {
+          loadGroupsToSelect("nodeGroup");
+        } else {
+          // Created from the Add Device form: select the new group right away.
+          const newId = data.group && data.group.id ? data.group.id : null;
+          loadGroupsToSelect("nodeGroup", newId);
+        }
         loadGroupsToSelect("editNodeGroup");
       } else {
-        showAlert(data.error || "Failed to save group", "error");
+        showInfoToast(data.error || "Failed to save group", true);
       }
     });
 }
 
 function deleteGroup(id) {
-  if (
-    confirm("Delete this group? Nodes in this group will become ungrouped.")
-  ) {
-    fetch(`/api/groups/${id}`, { method: "DELETE" })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success) {
-          showAlert("Group deleted");
-          loadGroups();
-          loadGroupsToSelect("nodeGroup");
-          loadGroupsToSelect("editNodeGroup");
-        } else {
-          showAlert(data.error || "Failed to delete group", "error");
-        }
-      });
-  }
+  // The popup names the group so it's obvious which one is being removed.
+  const g = (allGroups || []).find((grp) => String(grp.id) === String(id));
+  const gName = g ? g.name : id;
+  confirmAction(
+    `Delete this group (${gName})? Please move its devices to another group first.`,
+    () => {
+      fetch(`/api/groups/${id}`, { method: "DELETE" })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success) {
+            showInfoToast(`Group deleted (${gName})`);
+            loadGroups();
+            loadGroupsToSelect("nodeGroup");
+            loadGroupsToSelect("editNodeGroup");
+          } else {
+            showInfoToast(data.error || "Failed to delete group", true);
+          }
+        });
+    },
+    { danger: true, confirmLabel: "Delete", blocking: true },
+  );
 }
 
 // ============ Models ============
@@ -1895,6 +3315,13 @@ function loadModels() {
   fetch("/api/models")
     .then((r) => r.json())
     .then((models) => {
+      // Keep the Models table ordered A-Z by model name (then id) instead of
+      // the backend dictionary order.
+      models.sort(
+        (a, b) =>
+          (a.name || "").localeCompare(b.name || "") ||
+          (a.id || "").localeCompare(b.id || ""),
+      );
       allModels = models;
       const tbody = document.getElementById("modelsList");
       if (tbody) {
@@ -1903,6 +3330,7 @@ function loadModels() {
             (m) => `
               <tr>
                   <td><input type="checkbox" id="model-${m.id}" value="${m.id}" ${m.enabled ? "checked" : ""}></td>
+                  <td>${escapeHtml((m.name || "").split(" ")[0])}</td>
                   <td>${escapeHtml(m.name)}</td>
                   <td><strong>${escapeHtml(m.id)}</strong></td>
               </tr>
@@ -1912,16 +3340,7 @@ function loadModels() {
       }
       // Models may finish loading after the Nodes/Groups tables already rendered
       // with raw model IDs — refresh them now that names are available.
-      if (Array.isArray(allNodes) && allNodes.length) {
-        if (typeof filterNodes === "function") {
-          filterNodes();
-        } else {
-          renderNodesTable(allNodes);
-        }
-      }
-      if (Array.isArray(allGroups) && allGroups.length) {
-        renderGroupsWithNodes(allGroups, allNodes || []);
-      }
+      renderDevices();
     });
 }
 
@@ -1941,7 +3360,9 @@ function saveModels() {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert(t("success_save_models") || "Models saved successfully");
+        showInfoToast(`Device models saved (${enabled.length} enabled)`);
+      } else {
+        showInfoToast(data.error || "Failed to save models", true);
       }
     });
 }
@@ -1959,6 +3380,7 @@ function filterModels() {
       (m) => `
         <tr>
             <td><input type="checkbox" id="model-${m.id}" value="${m.id}" ${m.enabled ? "checked" : ""}></td>
+            <td>${escapeHtml((m.name || "").split(" ")[0])}</td>
             <td>${escapeHtml(m.name)}</td>
             <td><strong>${escapeHtml(m.id)}</strong></td>
         </tr>
@@ -1997,14 +3419,14 @@ function renderCredentialsList(creds) {
     .map(
       (c) => `
         <tr>
-            <td><input type="checkbox" id="cred-${c.id}" value="${c.id}" checked></td>
+            <td><input type="checkbox" class="cred-enable-toggle" id="cred-${c.id}" value="${c.id}" ${c.enabled === false ? "" : "checked"}></td>
             <td>${escapeHtml(c.label)}</td>
             <td>${escapeHtml(c.username)}</td>
             <td>${escapeHtml(c.description || "")}</td>
             <td>
                 <div class="btn-group">
-                    <button class="btn" style="padding:5px 10px;font-size:12px;" onclick="openEditCredentialModal('${c.id}')">${t("edit")}</button>
-                    <button class="btn btn-danger" style="padding:5px 10px;font-size:12px;" onclick="deleteCredential('${c.id}')">${t("delete")}</button>
+                    <button class="btn btn-xs" onclick="openEditCredentialModal('${c.id}')">${"Edit"}</button>
+                    <button class="btn btn-danger btn-xs" onclick="deleteCredential('${c.id}')">${"Delete"}</button>
                 </div>
             </td>
         </tr>
@@ -2014,10 +3436,33 @@ function renderCredentialsList(creds) {
 }
 
 function saveCredentials() {
-  // Credentials are saved via individual Add/Edit modals, not a global save.
-  // This button exists in the credentials tab header for discoverability.
-  // Open the Add Credential modal so user can fill and submit the form.
-  openAddCredentialModal();
+  // Persist which credentials are enabled. Only touch the visible rows' states;
+  // rows hidden by the current search keep their stored value.
+  const visible = {};
+  document
+    .querySelectorAll(".cred-enable-toggle")
+    .forEach((cb) => {
+      visible[cb.value] = cb.checked;
+    });
+  const enabled = allCredentials
+    .filter((c) => (c.id in visible ? visible[c.id] : c.enabled !== false))
+    .map((c) => c.id);
+  fetch("/api/credentials-enabled", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  })
+    .then((r) => r.json())
+    .then((data) => {
+      if (data.success) {
+        showInfoToast("Credential states saved");
+        loadCredentials();
+        // Disabled credentials should disappear from the Add Device dropdown.
+        loadCredentialsToSelect("nodeCredential");
+      } else {
+        showInfoToast(data.error || "Failed to save credential states", true);
+      }
+    });
 }
 
 function filterCredentials() {
@@ -2063,11 +3508,11 @@ function handleAddCredential(e) {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert("Credential added successfully");
+        showInfoToast(`Credential added (${cred.label || cred.username})`);
         closeAddCredentialModal();
         loadCredentials();
       } else {
-        showAlert(data.error || "Failed to add credential", "error");
+        showInfoToast(data.error || "Failed to add credential", true);
       }
     });
 }
@@ -2107,63 +3552,211 @@ function handleUpdateCredential(e) {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert("Credential updated successfully");
+        showInfoToast(`Credential updated (${cred.label || cred.username})`);
         closeEditCredentialModal();
         loadCredentials();
       } else {
-        showAlert(data.error || "Failed to update credential", "error");
+        showInfoToast(data.error || "Failed to update credential", true);
       }
     });
 }
 
 function deleteCredential(id) {
-  if (confirm(t("confirm_delete"))) {
-    fetch(`/api/credentials/${id}`, { method: "DELETE" })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success) {
-          showAlert("Credential deleted successfully");
-          loadCredentials();
-        } else {
-          showAlert(data.error || "Failed to delete credential", "error");
-        }
-      });
-  }
+  const existing = allCredentials.find((c) => c.id == id);
+  const label = existing ? existing.label || existing.username || id : id;
+  confirmAction(
+    `Delete this credential (${label})? This cannot be undone.`,
+    () => {
+      fetch(`/api/credentials/${id}`, { method: "DELETE" })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success) {
+            showInfoToast(`Credential deleted (${label})`);
+            loadCredentials();
+          } else {
+            showInfoToast(data.error || "Failed to delete credential", true);
+          }
+        });
+    },
+    { danger: true, confirmLabel: "Delete", blocking: true },
+  );
 }
 
-function loadCredentialsToSelect(selectId) {
+function loadCredentialsToSelect(selectId, selectCredId, onDone) {
   fetch("/api/credentials")
     .then((r) => r.json())
     .then((creds) => {
+      allCredentials = creds;
       const select = document.getElementById(selectId);
       if (!select) return;
       const currentValue = select.value;
       select.innerHTML = '<option value="">Select credential</option>';
       creds.forEach((c) => {
+        // Disabled credentials are not selectable in the dropdown.
+        if (c.enabled === false) return;
         const opt = document.createElement("option");
         opt.value = c.id;
         opt.textContent = `${c.label} (${c.username})`;
         select.appendChild(opt);
       });
-      if (currentValue) select.value = currentValue;
+      // Admins can create a credential inline from the Add Device form.
+      if (selectId === "nodeCredential" && window.currentUserRole === "admin") {
+        const co = document.createElement("option");
+        co.value = "__new__";
+        co.textContent = "＋ Create new credential…";
+        select.appendChild(co);
+      }
+      if (selectCredId) select.value = selectCredId;
+      else if (currentValue && currentValue !== "__new__")
+        select.value = currentValue;
+      if (onDone) onDone();
     });
 }
 
-function loadGroupsToSelect(selectId) {
+function loadGroupsToSelect(selectId, selectGroupId) {
   fetch("/api/groups")
     .then((r) => r.json())
     .then((data) => {
       const select = document.getElementById(selectId);
       if (!select) return;
       const currentValue = select.value;
-      select.innerHTML = '<option value="">No Group</option>';
+      select.innerHTML = '<option value="">Select a group…</option>';
       data.groups.forEach((g) => {
         const opt = document.createElement("option");
         opt.value = g.id;
         opt.textContent = g.name;
         select.appendChild(opt);
       });
-      if (currentValue) select.value = currentValue;
+      // Admins can create a group inline from the Add Device form.
+      if (selectId === "nodeGroup" && window.currentUserRole === "admin") {
+        const co = document.createElement("option");
+        co.value = "__new__";
+        co.textContent = "＋ Create new group…";
+        select.appendChild(co);
+      }
+      if (selectGroupId) select.value = selectGroupId;
+      else if (currentValue && currentValue !== "__new__")
+        select.value = currentValue;
+    });
+}
+
+// ============ Add Device: inline group / credential creation ============
+// The Group / Credential dropdowns in the Add Device form end with a
+// "＋ Create new …" option. Choosing it reveals a compact inline sub-form under
+// the field (admin only). There is no separate "Add" button: the new group /
+// credential is created automatically as part of clicking "Add Device".
+function openInlineGroupForm() {
+  const f = document.getElementById("inlineGroupForm");
+  if (!f) return;
+  f.classList.add("show");
+  const n = document.getElementById("inlineGroupName");
+  if (n) n.focus();
+}
+
+function closeInlineGroupForm(clear) {
+  const f = document.getElementById("inlineGroupForm");
+  if (!f) return;
+  f.classList.remove("show");
+  if (clear) {
+    const n = document.getElementById("inlineGroupName");
+    const d = document.getElementById("inlineGroupDesc");
+    if (n) n.value = "";
+    if (d) d.value = "";
+  }
+}
+
+function onNodeGroupChange() {
+  const sel = document.getElementById("nodeGroup");
+  if (!sel) return;
+  if (sel.value === "__new__") {
+    openInlineGroupForm();
+    sel.value = "";
+  } else {
+    closeInlineGroupForm(true);
+  }
+}
+
+// True when the inline group sub-form is open and has a name typed.
+function isCreatingNewGroup() {
+  const f = document.getElementById("inlineGroupForm");
+  const n = document.getElementById("inlineGroupName");
+  return !!(f && f.classList.contains("show") && n && n.value.trim() !== "");
+}
+
+// Creates a group and resolves with its new id (used by addNode).
+function createGroupInline() {
+  const name = document.getElementById("inlineGroupName").value.trim();
+  const description = document.getElementById("inlineGroupDesc").value.trim();
+  return fetch("/api/groups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, description }),
+  })
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.success) throw new Error(data.error || "Failed to create group");
+      return data.group && data.group.id ? data.group.id : null;
+    });
+}
+
+function openInlineCredForm() {
+  const f = document.getElementById("inlineCredForm");
+  if (!f) return;
+  f.classList.add("show");
+  const l = document.getElementById("inlineCredLabel");
+  if (l) l.focus();
+}
+
+function closeInlineCredForm(clear) {
+  const f = document.getElementById("inlineCredForm");
+  if (!f) return;
+  f.classList.remove("show");
+  if (clear) {
+    [
+      "inlineCredLabel",
+      "inlineCredUsername",
+      "inlineCredPassword",
+      "inlineCredEnablePassword",
+      "inlineCredDesc",
+    ].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+  }
+}
+
+// True when the inline credential sub-form is open and has a label typed.
+function isCreatingNewCredential() {
+  const f = document.getElementById("inlineCredForm");
+  const l = document.getElementById("inlineCredLabel");
+  return !!(f && f.classList.contains("show") && l && l.value.trim() !== "");
+}
+
+// Creates a credential and resolves with { id, username, password } (addNode).
+function createCredentialInline() {
+  const label = document.getElementById("inlineCredLabel").value.trim();
+  const username = document.getElementById("inlineCredUsername").value;
+  const password = document.getElementById("inlineCredPassword").value;
+  const enable_password = document.getElementById("inlineCredEnablePassword").value;
+  const description = document.getElementById("inlineCredDesc").value;
+  return fetch("/api/credentials", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: "",
+      label,
+      username,
+      password,
+      enable_password,
+      description,
+      enabled: true,
+    }),
+  })
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.success)
+        throw new Error(data.error || "Failed to create credential");
+      return { id: data.id, username, password };
     });
 }
 
@@ -2180,7 +3773,7 @@ function loadModelsToSelect(selectId) {
         .forEach((m) => {
           const opt = document.createElement("option");
           opt.value = m.id;
-          opt.textContent = `${m.id} - ${m.name}`;
+          opt.textContent = formatModelDisplay(m.name);
           select.appendChild(opt);
         });
       if (currentValue) select.value = currentValue;
@@ -2329,7 +3922,7 @@ function loadConfig() {
     })
     .catch((err) => {
       console.error("Failed to load config:", err);
-      showAlert("Failed to load config: " + err, "error");
+      showInfoToast("Failed to load config: " + err, true);
     });
 }
 
@@ -2353,11 +3946,11 @@ function saveConfigBasic(e) {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert("Basic settings saved!", "success");
+        showInfoToast("Basic settings saved successfully");
       } else {
-        showAlert(
+        showInfoToast(
           "Failed to save: " + (data.error || "Unknown error"),
-          "error",
+          true,
         );
       }
     });
@@ -2403,11 +3996,11 @@ function saveConfigSSH(e) {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert("SSH settings saved!", "success");
+        showInfoToast("SSH settings saved successfully");
       } else {
-        showAlert(
+        showInfoToast(
           "Failed to save: " + (data.error || "Unknown error"),
-          "error",
+          true,
         );
       }
     });
@@ -2431,11 +4024,11 @@ function saveConfigOutput(e) {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert("Output settings saved!", "success");
+        showInfoToast("Output settings saved successfully");
       } else {
-        showAlert(
+        showInfoToast(
           "Failed to save: " + (data.error || "Unknown error"),
-          "error",
+          true,
         );
       }
     });
@@ -2463,11 +4056,11 @@ function saveConfigVars(e) {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert("Vars settings saved!", "success");
+        showInfoToast("Vars settings saved successfully");
       } else {
-        showAlert(
+        showInfoToast(
           "Failed to save: " + (data.error || "Unknown error"),
-          "error",
+          true,
         );
       }
     });
@@ -2479,7 +4072,7 @@ function formatYaml() {
     const yaml = jsyaml.load(editor.value);
     editor.value = jsyaml.dump(yaml, { indent: 2, lineWidth: -1 });
   } catch (e) {
-    showAlert("YAML format error: " + e.message, "error");
+    showInfoToast("YAML format error: " + e.message, true);
   }
 }
 
@@ -2493,12 +4086,17 @@ function validateYamlConfig() {
     .then((r) => r.json())
     .then((data) => {
       const status = document.getElementById("yaml-validate-status");
+      // SVG icons instead of emoji, matching the Config tab button icons.
       if (data.valid) {
-        status.textContent = "✅ Valid YAML";
-        status.style.color = "green";
+        status.innerHTML =
+          '<svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span>Valid YAML</span>';
+        status.style.color = "var(--success-fg)";
       } else {
-        status.textContent = "❌ Invalid: " + (data.errors || []).join(", ");
-        status.style.color = "red";
+        status.innerHTML =
+          '<svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg><span>Invalid: ' +
+          escapeHtml((data.errors || []).join(", ")) +
+          "</span>";
+        status.style.color = "var(--danger-fg)";
       }
     });
 }
@@ -2515,12 +4113,12 @@ function saveYamlConfig() {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert("YAML config saved!", "success");
+        showInfoToast("YAML config saved successfully");
         loadConfigVersions();
       } else {
-        showAlert(
+        showInfoToast(
           "Failed to save: " + (data.errors || data.error || "Unknown error"),
-          "error",
+          true,
         );
       }
     });
@@ -2550,7 +4148,7 @@ function loadConfigVersions() {
                     <td>${v.created_at}</td>
                     <td>${v.commit_message || ""}</td>
                     <td>
-                        <button class="btn btn-sm" onclick="rollbackConfig(${v.version})">↩️ Rollback</button>
+                        <button class="btn btn-sm" onclick="rollbackConfig(${v.version})"><svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>Rollback</span></button>
                     </td>
                 </tr>
             `,
@@ -2572,28 +4170,33 @@ function loadConfigVersions() {
 }
 
 function rollbackConfig(version) {
-  if (!confirm("Rollback to version " + version + "?")) return;
-  fetch("/api/config/rollback", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      version: version,
-      commit_message: "Rollback to v" + version,
-    }),
-  })
-    .then((r) => r.json())
-    .then((data) => {
-      if (data.success) {
-        showAlert("Rolled back to v" + version + "!", "success");
-        loadConfig();
-        loadConfigVersions();
-      } else {
-        showAlert(
-          "Failed to rollback: " + (data.error || "Unknown error"),
-          "error",
-        );
-      }
-    });
+  confirmAction(
+    `Rollback config to v${version}? This creates a new version.`,
+    () => {
+      fetch("/api/config/rollback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: version,
+          commit_message: "Rollback to v" + version,
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success) {
+            showInfoToast(`Rolled back to v${version}`);
+            loadConfig();
+            loadConfigVersions();
+          } else {
+            showInfoToast(
+              "Failed to rollback: " + (data.error || "Unknown error"),
+              true,
+            );
+          }
+        });
+    },
+    { danger: true, confirmLabel: "Rollback", blocking: true },
+  );
 }
 
 function applyConfig() {
@@ -2605,9 +4208,9 @@ function applyConfig() {
     .then((r) => r.json())
     .then((data) => {
       if (data.success) {
-        showAlert("Config applied and Oxidized restarted!", "success");
+        showInfoToast("Config applied and Oxidized restarted");
       } else {
-        showAlert("Failed: " + (data.error || "Unknown error"), "error");
+        showInfoToast("Failed: " + (data.error || "Unknown error"), true);
       }
     });
 }
@@ -2617,7 +4220,7 @@ function showSelectedDiff() {
   const toVersion = document.getElementById("diff-to").value;
 
   if (!fromVersion || !toVersion) {
-    showAlert("Please select both versions to compare", "error");
+    showInfoToast("Select both versions to compare", true);
     return;
   }
 
@@ -2697,6 +4300,8 @@ function applyRoleBasedVisibility() {
   const credTab = document.getElementById("tab-credentials");
   if (credTab) credTab.style.display = isAdmin ? "" : "none";
 
+  // Groups page "+ Add Group" button (inline group/credential creation in the
+  // Add Device form is gated via window.currentUserRole inside the loaders).
   const addGroupBtns = document.querySelectorAll(
     '[onclick="openAddGroupModal()"]',
   );
@@ -2768,7 +4373,7 @@ function setupSchedulerDataView() {
     openSchedulerBtn.title = "Configure Global Schedule";
     openSchedulerBtn.onclick = function (e) {
       if (e) e.preventDefault();
-      document.getElementById("globalScheduleModal").classList.add("show");
+      openGlobalSchedule();
     };
   }
 }
@@ -2808,8 +4413,16 @@ document.addEventListener("keydown", (e) => {
 });
 
 updateUI();
+initPasswordToggleIcons();
+markSidebarLeafItems();
+restoreActiveTab();
 loadModels();
 setupSchedulerDataView();
 loadSchedulerSettings();
-refreshOxidizedStatus();
-setInterval(refreshOxidizedStatus, 60000);
+loadGroups();
+refreshOxidizedStatus(true); // silent on load; only the Refresh button pops a toast
+loadActivityLog();
+setInterval(() => refreshOxidizedStatus(true), 60000);
+// Refresh the persisted Activity Log from the server every minute so outcomes
+// recorded by other sessions/browsers appear without a manual reload.
+setInterval(loadActivityLog, 60000);

@@ -63,7 +63,7 @@ class TestSetup:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data["success"] is False
-        assert "不一致" in data["error"]
+        assert "do not match" in data["error"]
 
     def test_setup_rejects_short_password(self, client, clean_db):
         """Test that passwords under 8 characters are rejected."""
@@ -93,7 +93,7 @@ class TestSetup:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data["success"] is False
-        assert "强度" in data["error"]
+        assert "weak" in data["error"]
 
     def test_setup_fails_when_already_configured(self, client, test_user):
         """Test that setup fails when users already exist."""
@@ -108,7 +108,7 @@ class TestSetup:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data["success"] is False
-        assert "已设置" in data["error"]
+        assert "already configured" in data["error"]
 
 
 class TestLogin:
@@ -221,7 +221,7 @@ class TestChangePassword:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data["success"] is False
-        assert "错误" in data["error"]
+        assert "incorrect" in data["error"]
 
 
 class TestUsersManagement:
@@ -281,4 +281,4 @@ class TestUsersManagement:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data["success"] is False
-        assert "自己" in data["error"]
+        assert "your own" in data["error"]

@@ -32,9 +32,12 @@ services:
       TZ: Asia/Jakarta
       FLASK_ENV: production
 
+      # Secrets come from the untracked .env file (see .env.template);
+      # defaults only keep fresh clones bootable, change them in production.
       OXIDIZED_API_URL: http://oxidized:8888
-      OXIDIZED_USER: admin
-      OXIDIZED_PASSWORD: admin
+      OXIDIZED_USER: ${OXIDIZED_USER:-admin}
+      OXIDIZED_PASSWORD: ${OXIDIZED_PASSWORD:-admin}
+      SECRET_KEY: ${SECRET_KEY:-}
 
       DATABASE_PATH: /oxidized_config/nodes.db
       CONFIG_FILE: /oxidized_config/nodes.csv

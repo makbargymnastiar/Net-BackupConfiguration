@@ -15,4 +15,5 @@ from routes import nodes, auth, oxidized_api, config_api, models_api
 from routes.groups_api import groups_bp
 from routes.models_api import models_bp
 from routes.credentials_api import credentials_bp
+from routes.activity_log_api import activity_log_bp
 from routes.pages import pages_bp

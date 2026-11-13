@@ -50,7 +50,7 @@ def login():
             {
                 "success": False,
                 "error": "first_time_setup",
-                "message": "请先创建管理员账户",
+                "message": "Please create an admin account first",
             }
         )
 
@@ -59,7 +59,7 @@ def login():
     password = data.get("password", "")
 
     if not username or not password:
-        return jsonify({"success": False, "error": "请输入用户名和密码"})
+        return jsonify({"success": False, "error": "Please enter username and password"})
 
     user = User.authenticate(username, password)
     if user:
@@ -70,18 +70,18 @@ def login():
                 {
                     "success": True,
                     "must_change_password": True,
-                    "message": "首次登录必须修改密码",
+                    "message": "You must change your password on first login",
                 }
             )
         return jsonify({"success": True})
-    return jsonify({"success": False, "error": "用户名或密码错误"})
+    return jsonify({"success": False, "error": "Invalid username or password"})
 
 
 @auth_bp.route("/api/setup", methods=["POST"])
 def setup():
     """First time setup - create admin account."""
     if not is_first_time():
-        return jsonify({"success": False, "error": "系统已设置，请登录"})
+        return jsonify({"success": False, "error": "System already configured, please log in"})
 
     data = request.json
     username = data.get("username", "").strip()
@@ -90,19 +90,19 @@ def setup():
 
     # Validation
     if not username or not password:
-        return jsonify({"success": False, "error": "用户名和密码不能为空"})
+        return jsonify({"success": False, "error": "Username and password cannot be empty"})
 
     if len(username) < 3:
-        return jsonify({"success": False, "error": "用户名至少3个字符"})
+        return jsonify({"success": False, "error": "Username must be at least 3 characters"})
 
     if len(password) < 8:
-        return jsonify({"success": False, "error": "密码至少8个字符"})
+        return jsonify({"success": False, "error": "Password must be at least 8 characters"})
 
     if password != confirm_password:
-        return jsonify({"success": False, "error": "两次输入的密码不一致"})
+        return jsonify({"success": False, "error": "Passwords do not match"})
 
     if password.lower() in ["password", "12345678", "admin123"]:
-        return jsonify({"success": False, "error": "密码强度太弱，请使用更复杂的密码"})
+        return jsonify({"success": False, "error": "Password is too weak, please use a more complex password"})
 
     # Create admin user
     try:
@@ -152,28 +152,28 @@ def change_password():
     user = User.get_by_username(username)
 
     if not user:
-        return jsonify({"success": False, "error": "用户不存在"})
+        return jsonify({"success": False, "error": "User not found"})
 
     current_password = data.get("current_password", "")
     new_password = data.get("new_password", "")
     confirm_password = data.get("confirm_password", "")
 
     if len(new_password) < 8:
-        return jsonify({"success": False, "error": "密码至少8个字符"})
+        return jsonify({"success": False, "error": "Password must be at least 8 characters"})
 
     if new_password != confirm_password:
-        return jsonify({"success": False, "error": "两次输入的密码不一致"})
+        return jsonify({"success": False, "error": "Passwords do not match"})
 
     if not user.check_password(current_password):
-        return jsonify({"success": False, "error": "当前密码错误"})
+        return jsonify({"success": False, "error": "Current password is incorrect"})
 
     if new_password.lower() in ["password", "12345678", "admin123"]:
-        return jsonify({"success": False, "error": "密码强度太弱"})
+        return jsonify({"success": False, "error": "Password is too weak"})
 
     user.password_hash = User.hash_password(new_password)
     user.clear_must_change_password()
 
-    return jsonify({"success": True, "message": "密码修改成功"})
+    return jsonify({"success": True, "message": "Password changed successfully"})
 
 
 @auth_bp.route("/api/users", methods=["GET", "POST"])
@@ -196,16 +196,16 @@ def users_api():
         role = data.get("role", "user")
 
         if not username or not password:
-            return jsonify({"success": False, "error": "用户名和密码不能为空"})
+            return jsonify({"success": False, "error": "Username and password cannot be empty"})
 
         if len(username) < 3:
-            return jsonify({"success": False, "error": "用户名至少3个字符"})
+            return jsonify({"success": False, "error": "Username must be at least 3 characters"})
 
         if len(password) < 8:
-            return jsonify({"success": False, "error": "密码至少8个字符"})
+            return jsonify({"success": False, "error": "Password must be at least 8 characters"})
 
         if User.get_by_username(username):
-            return jsonify({"success": False, "error": "用户已存在"})
+            return jsonify({"success": False, "error": "User already exists"})
 
         try:
             User.create_user(username=username, password=password, role=role)
@@ -223,11 +223,11 @@ def delete_user(username):
         return jsonify({"success": False, "error": "Admin access required"}), 403
 
     if username == current_user.username:
-        return jsonify({"success": False, "error": "不能删除自己"})
+        return jsonify({"success": False, "error": "You cannot delete your own account"})
 
     user = User.get_by_username(username)
     if not user:
-        return jsonify({"success": False, "error": "用户不存在"})
+        return jsonify({"success": False, "error": "User not found"})
 
     User.delete_by_id(user.id)
     return jsonify({"success": True})
@@ -247,17 +247,17 @@ def users_admin_change_password():
     confirm_password = data.get("confirm_password", "")
 
     if not username or not new_password:
-        return jsonify({"success": False, "error": "用户名和密码不能为空"})
+        return jsonify({"success": False, "error": "Username and password cannot be empty"})
 
     user = User.get_by_username(username)
     if not user:
-        return jsonify({"success": False, "error": "用户不存在"})
+        return jsonify({"success": False, "error": "User not found"})
 
     if len(new_password) < 8:
-        return jsonify({"success": False, "error": "密码至少8个字符"})
+        return jsonify({"success": False, "error": "Password must be at least 8 characters"})
 
     if new_password != confirm_password:
-        return jsonify({"success": False, "error": "两次输入的密码不一致"})
+        return jsonify({"success": False, "error": "Passwords do not match"})
 
     user.password_hash = User.hash_password(new_password)
     user.save()
@@ -268,21 +268,33 @@ def users_admin_change_password():
 @auth_bp.route("/api/force-change-password", methods=["POST"])
 @login_required
 def force_change_password():
-    """首次登录强制修改密码"""
-    # Lazy import to avoid circular dependency
-    import app
+    """Force change password on first login.
+
+    bcrypt-backed (same as the other change-password routes): the old version
+    verified and stored passwords in plaintext inside users.json, leaking real
+    credentials to a world-readable file — never touch that file again. The
+    must_change_password column on the SQLite user is the only state now.
+    """
     data = request.json
-    users = app.load_users()
     username = session.get("username")
+    user = User.get_by_username(username)
 
-    current_password = data.get("current_password")
-    new_password = data.get("new_password")
+    if not user:
+        return jsonify({"success": False, "error": "User not found"})
 
-    if users.get(username) != current_password:
+    current_password = data.get("current_password", "")
+    new_password = data.get("new_password", "")
+
+    if not user.check_password(current_password):
         return jsonify({"success": False, "error": "Current password is incorrect"})
 
-    users[username] = new_password
-    app.save_users(users)
-    app.mark_password_as_changed(username)
+    if len(new_password) < 8:
+        return jsonify({"success": False, "error": "Password must be at least 8 characters"})
+
+    if new_password.lower() in ["password", "12345678", "admin123"]:
+        return jsonify({"success": False, "error": "Password is too weak, please use a more complex password"})
+
+    user.password_hash = User.hash_password(new_password)
+    user.clear_must_change_password()
 
     return jsonify({"success": True})

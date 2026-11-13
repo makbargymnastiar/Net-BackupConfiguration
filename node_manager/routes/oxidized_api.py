@@ -267,8 +267,8 @@ def oxidized_restart():
 
     success = restart_oxidized_container()
     if success:
-        return jsonify({"success": True, "message": "Oxidized 容器已重启"})
-    return jsonify({"success": False, "error": "重启失败，请检查容器状态"}), 500
+        return jsonify({"success": True, "message": "Oxidized container restarted"})
+    return jsonify({"success": False, "error": "Restart failed, please check container status"}), 500
 
 
 @oxidized_api_bp.route("/api/oxidized/token", methods=["GET"])

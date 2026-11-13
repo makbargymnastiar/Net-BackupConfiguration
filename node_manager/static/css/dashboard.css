@@ -1,21 +1,17 @@
 :root {
-  /* Primary Colors - Deep Blue Theme */
-  --primary: #1e3a5f;
-  --primary-light: #2d5a8a;
-  --primary-dark: #0f1f33;
-  --accent: #00d4aa;
-  --accent-hover: #00b894;
+  /* Primary Colors - Blue (NetBox-inspired, light-first) */
+  --primary: #1d4ed8;
+  --primary-light: #2563eb;
+  --primary-dark: #1e3a5f;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
 
   /* Backgrounds */
-  --bg-gradient-start: #1a1f2e;
-  --bg-gradient-end: #2d3748;
+  --bg-gradient-start: #f6f8fb;
+  --bg-gradient-end: #eef2f7;
   --bg-card: #ffffff;
-  --bg-card-hover: #f7fafc;
-  --bg-header: linear-gradient(
-    135deg,
-    var(--primary) 0%,
-    var(--primary-dark) 100%
-  );
+  --bg-card-hover: #f5f7fa;
+  --bg-header: #ffffff;
 
   /* Text Colors */
   --text-primary: #1a202c;
@@ -32,6 +28,16 @@
   --danger-light: #fee2e2;
   --info: #3b82f6;
   --info-light: #dbeafe;
+
+  /* Status foreground (darker, AA-contrast on the *-light backgrounds) */
+  --success-fg: #047857;
+  --warning-fg: #b45309;
+  --danger-fg: #b91c1c;
+  --info-fg: #1d4ed8;
+
+  /* Soft accent tint (active/hover washes, badges) */
+  --accent-soft: rgba(37, 99, 235, 0.12);
+  --primary-soft: rgba(37, 99, 235, 0.1);
 
   /* Borders & Shadows */
   --border-color: #e2e8f0;
@@ -168,6 +174,10 @@ textarea:focus-visible {
   padding: 0;
   box-sizing: border-box;
 }
+html,
+body {
+  height: 100%;
+}
 body {
   font-family:
     "SF Pro Display",
@@ -181,34 +191,52 @@ body {
     var(--bg-gradient-start) 0%,
     var(--bg-gradient-end) 100%
   );
-  min-height: 100vh;
-  padding: 24px;
   color: var(--text-primary);
+  overflow: hidden;
 }
+/* Full-width, full-height app shell: Sidebar | Main Column | Right Panel.
+   Each column manages its own scrolling, so the page itself never scrolls. */
 .container {
-  max-width: 1400px;
-  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "header header"
+    "sidebar layout";
+  width: 100%;
+  height: 100vh;
 }
 .header {
+  grid-area: header;
   background: var(--bg-header);
-  padding: 28px 32px;
-  border-radius: var(--radius-lg);
-  margin-bottom: 20px;
-  box-shadow: var(--shadow-lg);
+  padding: 14px 24px;
+  box-shadow: var(--shadow-sm);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
+}
+/* Row below the (now full-width) header: sidebar | main-column | right-panel */
+.layout {
+  grid-area: layout;
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
 }
 .header-left h1 {
-  color: var(--text-inverse);
-  margin-bottom: 6px;
+  color: var(--primary-dark);
   font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.5px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 .header-left p {
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 14px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  margin-top: 2px;
 }
 .header-right {
   display: flex;
@@ -259,10 +287,10 @@ body {
   gap: 8px;
 }
 .btn:hover {
-  background: #f59e0b;
-  color: #1a1a2e;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4);
+  background: var(--primary);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
 }
 .btn:active {
   transform: translateY(0);
@@ -292,43 +320,20 @@ body {
 .btn-success:hover {
   background: #059669;
 }
-.btn.lang-switch {
-  background: #f59e0b !important;
-  border: 1px solid #d97706 !important;
-  color: #1a1a2e !important;
-  font-weight: 600 !important;
-  backdrop-filter: none;
-  padding: 6px 12px !important;
-  font-size: 13px !important;
-  line-height: 1 !important;
-  border-radius: var(--radius-md) !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  width: auto !important;
-  flex: 0 0 auto !important;
-  box-sizing: border-box !important;
-  height: 36px !important;
-}
-.btn.lang-switch:hover {
-  background: #fbbf24 !important;
-  border-color: #f59e0b;
-  color: #1a1a2e !important;
-  transform: translateY(-1px);
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.5);
-}
-.btn.lang-switch .globe-icon {
-  color: #1a1a2e;
-  flex-shrink: 0;
-}
-.btn.lang-switch .lang-text {
-  margin-left: 6px;
-}
 
 .content {
+  position: relative;
   background: var(--bg-card);
-  border-radius: var(--radius-lg);
-  padding: 28px;
-  box-shadow: var(--shadow-lg);
+  padding: 20px 24px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* While the Compare overlay (which lives inside .content) is open, lock the
+   page scroll so .content's own scrollbar doesn't linger beside the Close
+   button. */
+.content.compare-open {
+  overflow: hidden;
 }
 
 .tabs {
@@ -365,91 +370,730 @@ body {
   display: block;
 }
 
-/* Sidebar Layout (wraps .tabs behaviour for the left-hand menu) */
-.app-layout {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-6);
-}
+/* ============ App shell columns: Sidebar | Main Column | Right Panel ============ */
+/* Sidebar is a FULL-HEIGHT column: [scrollable nav menu] + [user block pinned
+   at the bottom]. It stretches the entire layout row (viewport minus header)
+   so it no longer stops half-way, and its nav area scrolls on its own when
+   there are more items than fit while the user block stays put. Styled with a
+   deep-navy gradient that matches the header for a cohesive, modern shell. */
 .sidebar {
-  width: 230px;
+  grid-area: sidebar;
   flex-shrink: 0;
-  background: var(--bg-card-hover);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3);
-  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 240px;
+  height: 100%;
+  padding: var(--space-4) var(--space-3);
+  background: var(--bg-card);
+  border-right: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  overflow-y: auto;
   position: sticky;
-  top: var(--space-6);
+  top: 0;
+  z-index: 40;
 }
 .sidebar-menu {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: auto;
+  overflow: visible;
 }
-/* Override the horizontal-tab look from .tab when it's used as a sidebar item */
+/* Each nav cluster (Overview / Backup) is its own block so the two blocks
+   spread to the top and bottom of the rail instead of the content hanging
+   in the middle with a void below it. */
+.sidebar-nav-block {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+}
+/* Section labels (Overview / Backup) head each group in the vertical rail. */
+.sidebar-section-label {
+  display: block;
+  padding: 14px 12px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+/* User block pinned at the bottom of the vertical rail. */
+.sidebar-user {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-color);
+}
+.sidebar-user .user-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  margin: 0;
+}
+.sidebar-user .user-info p {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+.sidebar-user .username-btn {
+  height: 38px;
+  width: 100%;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-weight: 600;
+  backdrop-filter: none;
+}
+.sidebar-user .username-btn:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary-light);
+  color: var(--primary);
+  box-shadow: none;
+  transform: none;
+}
+.sidebar-logout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  width: 100%;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.sidebar-logout-btn .icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.sidebar-logout-btn:hover {
+  color: var(--danger-fg);
+  border-color: var(--danger);
+  background: var(--danger-light);
+}
+/* User dropdown: Logout / Change Password are hidden until the admin button
+   is clicked, then a small menu opens upward (the block sits at the bottom). */
+.user-menu-wrap {
+  position: relative;
+  width: 100%;
+}
+.user-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 60;
+}
+.user-menu.open {
+  display: flex;
+}
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: left;
+}
+.user-menu-item:hover {
+  background: var(--bg-card-hover);
+}
+.user-menu-item .icon {
+  width: 16px;
+  height: 16px;
+}
+.user-menu-item.user-menu-danger {
+  color: var(--danger);
+}
+.user-menu-item.user-menu-danger:hover {
+  background: var(--danger-soft);
+}
+/* Top-level nav items (full-width rows in the rail). */
 .sidebar-item {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: var(--space-3);
+  gap: var(--space-2);
   width: 100%;
-  padding: 10px var(--space-4);
+  height: 44px;
+  padding: 0 var(--space-3);
   border-radius: var(--radius-md);
   border-bottom: none;
-  border-left: 3px solid transparent;
-  text-align: left;
+  border-left: none;
   white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
 }
 .sidebar-item:hover {
   color: var(--primary);
-  background: var(--bg-card);
+  background: var(--bg-card-hover);
 }
 .sidebar-item.active {
-  color: var(--accent);
-  background: var(--bg-card);
-  border-bottom-color: transparent;
-  border-left-color: var(--accent);
-  box-shadow: var(--shadow-sm);
+  color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: none;
 }
-
 .sidebar-item .icon {
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
 }
-.main-content {
+
+/* Middle column: scrollable content, takes up the remaining width */
+.main-column {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.main-content {
   min-width: 0;
 }
 
-/* Sidebar dropdown groups (Pengaturan > Scheduler / Config / Users / Language / Logout) */
+/* Right column: permanent panel, split into Action/Detail (top) and Activity
+   Log (bottom), each independently scrollable. No close button by design. */
+.right-panel {
+  width: 430px;
+  flex-shrink: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+.right-panel-section {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* 65:35 split when both sections are visible. flex-basis 0 so the ratio
+   comes purely from flex-grow; when .right-panel-action is hidden (idle
+   state, see .right-panel-action-hidden below), Activity Log is the only
+   flex child left and naturally grows to fill the whole panel. */
+.right-panel-action {
+  flex: 65 1 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.right-panel-activity {
+  flex: 35 1 0;
+}
+/* Short-content Action panels (schedule, add/edit group): the Action section
+   sizes to its content (so the whole form down to the Save button stays
+   visible and never collapses to a cramped strip) but is capped so a long form
+   scrolls instead of pushing the Activity Log off-screen. The Activity Log
+   then fills the remaining space without rising all the way to the top. */
+.right-panel.right-panel-compact-action .right-panel-action {
+  flex: 0 0 auto;
+  max-height: 62%;
+}
+.right-panel.right-panel-compact-action .right-panel-activity {
+  flex: 1 1 0;
+}
+.right-panel-action-hidden {
+  display: none;
+}
+.right-panel-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.right-panel-section-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+/* Action/Detail title: a touch larger and paired with the pencil glyph that
+   ties it back to the device row's action menu. */
+#right-panel-action-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  line-height: 1.3;
+}
+#right-panel-action-title .icon {
+  /* Match the pencil-menu icons exactly (14px, text color, 0.7 opacity): the
+     previous 16px solid var(--primary) fill still looked too heavy/thick. */
+  width: 14px;
+  height: 14px;
+  color: var(--text-primary);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+.right-panel-section-header .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.right-panel-close-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.right-panel-close-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.right-panel-close-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--danger);
+}
+.right-panel-section-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+.right-panel-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-3);
+  color: var(--text-muted);
+}
+.right-panel-placeholder-icon {
+  width: 36px;
+  height: 36px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  margin-bottom: var(--space-1);
+}
+.right-panel-placeholder p {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.right-panel-placeholder-sub {
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  color: var(--text-muted) !important;
+  line-height: 1.5;
+}
+
+/* Edit mode: Action/Detail body splits into the Edit Device form (larger,
+   ~70%) and a compact Backup History strip (~30%), instead of Edit taking
+   the whole area. Normal mode (no split-mode class) just shows one thing
+   at a time, same as before. */
+#action-detail-panel.panel-split-mode {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+}
+#action-detail-panel.panel-split-mode .action-panel-context {
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  margin: 0;
+  flex-shrink: 0;
+}
+.panel-edit-slot {
+  flex: 7 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-4) var(--space-3);
+}
+.panel-edit-history-slot {
+  flex: 3 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-card-hover);
+}
+.panel-edit-history-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  flex-shrink: 0;
+}
+.panel-edit-history-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-4) var(--space-3);
+}
+.panel-edit-history-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+}
+.panel-edit-history-item:last-child {
+  border-bottom: none;
+}
+.panel-edit-history-item-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.panel-edit-history-item-time {
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* ============ Action / Detail: device actions wired into the Right Panel ============ */
+.action-panel-context {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-color);
+}
+.action-panel-context-device {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.action-panel-context-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary);
+}
+/* A modal's .modal-content is reused as-is here, just resized to fit the
+   narrower panel instead of a centered 500px popup. */
+.action-panel-slot .modal-content {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  max-height: none;
+  overflow-y: visible;
+  background: transparent;
+}
+.action-panel-slot .modal-header {
+  margin-bottom: var(--space-4);
+}
+.action-panel-slot .modal-header h2 {
+  font-size: 16px;
+}
+
+.panel-confirm-delete {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.panel-confirm-delete-name {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 15px;
+}
+.panel-confirm-delete-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.panel-confirm-delete-actions .btn {
+  flex: 1;
+}
+
+.panel-backup-trigger p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.panel-text-danger {
+  color: var(--danger) !important;
+}
+
+/* ============ Activity Log (Right Panel, bottom): backup results only ============ */
+.activity-log-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.activity-log-item:last-child {
+  border-bottom: none;
+}
+.activity-log-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+.activity-log-dot-success {
+  background: var(--success);
+}
+.activity-log-dot-failed {
+  background: var(--danger);
+}
+.activity-log-dot-pending {
+  background: #d97706;
+  animation: activity-log-pulse 1.4s ease-in-out infinite;
+}
+@keyframes activity-log-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.activity-log-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.activity-log-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+.activity-log-title-success {
+  color: var(--success);
+}
+.activity-log-title-failed {
+  color: var(--danger);
+}
+.activity-log-title-pending {
+  color: #d97706;
+}
+.activity-log-hostname {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.activity-log-ip {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* +X / -Y backup difference badge, shown inline beside the hostname. */
+.activity-log-diff {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.activity-log-diff-add {
+  color: var(--success-fg, #047857);
+  background: var(--success-light, #d1fae5);
+}
+.activity-log-diff-del {
+  color: var(--danger-fg, #b91c1c);
+  background: var(--danger-light, #fee2e2);
+}
+.activity-log-diff-none {
+  color: var(--text-muted);
+  background: var(--bg-app, #f1f5f9);
+}
+.activity-log-date {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.activity-log-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Compare: shown as an overlay inside the main content area only — sidebar
+   and the Right Panel (with its Backup History + checkboxes) stay visible
+   and usable underneath/alongside it, so another pair can be compared
+   without losing the current selection. */
+.compare-view-container {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: var(--bg-card);
+  z-index: 40;
+  /* Belt-and-suspenders: the overlay itself must never produce a scrollbar
+     (the shell and panes handle their own overflow). */
+  overflow: hidden;
+}
+.compare-view-container.show {
+  display: flex;
+  flex-direction: column;
+}
+.compare-view-container .modal-content {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+  /* No outer scrollbar around the whole compare: the base .modal-content
+     overflow-y:auto + max-height:90vh would add one. Each diff pane scrolls
+     internally instead, so the shell itself must not. */
+  overflow: hidden;
+}
+
+/* Compare/Diff rendered inside the Right Panel (Phase 5). The panel widens
+   while a diff is showing so the old|new split stays readable; #diffModalContent
+   and renderSplitDiff() are reused unchanged — only the layout target differs.
+   On exit (closeDiffModal) these classes are removed and the panel returns to
+   its default 360px. */
+.right-panel.right-panel-diff {
+  width: 560px;
+}
+#action-detail-panel.panel-diff-mode {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 0;
+}
+#action-detail-panel.panel-diff-mode .action-panel-context {
+  padding: var(--space-3) var(--space-4);
+  margin: 0;
+  flex-shrink: 0;
+}
+#action-detail-panel.panel-diff-mode .action-panel-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 0 var(--space-4) var(--space-4);
+}
+#action-detail-panel.panel-diff-mode #diffModalContent {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+}
+#action-detail-panel.panel-diff-mode #diffPaneContainer {
+  font-size: 11px;
+}
+
+/* Sidebar dropdown groups (Settings > Scheduler / Backup Models / Import / Config / Users / Logout) */
 .sidebar-item-group {
   display: flex;
   flex-direction: column;
+  align-self: stretch;
+  width: 100%;
+  position: relative;
 }
 .icon.chevron {
   width: 14px;
   height: 14px;
   margin-left: auto;
   flex-shrink: 0;
+  opacity: 0.6;
   transition: transform 0.2s ease;
 }
 .sidebar-dropdown-toggle.open .icon.chevron {
   transform: rotate(180deg);
+  opacity: 1;
 }
+/* Inline accordion submenu (vertical rail). */
 .sidebar-submenu {
   display: none;
   flex-direction: column;
   gap: 2px;
-  padding-left: var(--space-4);
-  margin-top: 2px;
-  border-left: 2px solid var(--border-color);
-  margin-left: var(--space-4);
+  width: 100%;
+  margin: 2px 0;
+  padding: 2px 0 2px var(--space-5);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 .sidebar-submenu.open {
   display: flex;
+  animation: submenu-reveal 0.16s ease;
 }
+@keyframes submenu-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* Nested (Config) stays an inline accordion within the flyout. */
 .sidebar-submenu.nested {
-  padding-left: var(--space-3);
-  margin-left: var(--space-2);
+  position: static;
+  min-width: 0;
+  margin: 2px 0 0;
+  padding: 0 0 0 var(--space-5);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
 }
 .sidebar-subitem {
   display: flex;
@@ -462,34 +1106,44 @@ body {
   border-radius: var(--radius-sm);
   background: none;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-secondary);
   text-align: left;
   white-space: nowrap;
-  transition: all 0.2s;
+  transition: all 0.15s;
 }
 .sidebar-subitem .icon {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
 }
 .sidebar-subitem:hover {
   color: var(--primary);
-  background: var(--bg-card);
+  background: var(--bg-card-hover);
 }
 .sidebar-subitem.active {
-  color: var(--accent);
-  background: var(--bg-card);
-  border-left-color: var(--accent);
-  box-shadow: var(--shadow-sm);
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-left-color: var(--primary);
+  box-shadow: none;
 }
-.sidebar-subitem-danger {
-  color: var(--danger);
+/* The nested Config dropdown toggle must read exactly like the top-level
+   Settings toggle: same pill radius and height, same hover wash, and none of
+   the leaf-item left-border marker (its 3px border shifted the hover
+   background so the two dropdowns looked different). */
+.sidebar-subitem.sidebar-dropdown-toggle {
+  height: 44px;
+  padding: 0 var(--space-3);
+  border-left: none;
+  border-radius: var(--radius-md);
 }
-.sidebar-subitem-danger:hover {
-  color: #fff;
-  background: var(--danger);
+.sidebar-subitem-danger:hover,
+.sidebar-subitem-danger:active {
+  color: var(--danger-fg);
+  background: var(--danger-light);
+  border-left-color: var(--danger);
+  box-shadow: none;
 }
 
 /* Groups tab: each group shown as a card with its devices listed inside */
@@ -503,42 +1157,116 @@ body {
 }
 .group-section-header {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-4);
+  background: var(--bg-card-hover);
+  border-bottom: 1px solid var(--border-color);
+}
+/* Top row inside the header: title (left) + action buttons (right). */
+.group-section-heading {
+  display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-3);
-  padding: var(--space-4);
-  background: var(--bg-card-hover);
-  border-bottom: 1px solid var(--border-color);
 }
 .group-section-title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 18px;
 }
 .group-section-title .icon {
   color: var(--primary);
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
 }
 .group-section-desc {
   font-weight: 400;
   font-size: 12px;
   color: var(--text-secondary);
+  /* Sits on its own line under the title, indented to align with the name. */
+  padding-left: 26px;
 }
 .group-section-count {
-  font-weight: 400;
-  font-size: 11px;
-  color: var(--text-inverse);
-  background: var(--primary-light);
-  padding: 2px 10px;
-  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding-left: 0;
+  margin-top: 2px;
+}
+.group-section-count .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 .group-section table {
   margin-top: 0;
   box-shadow: none;
   border-radius: 0;
+}
+/* Fixed column widths so every group's table lines up with the ones above
+   and below it — the previous auto layout shifted columns between sections
+   because each table sized independently to its own content. */
+.group-devices-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.group-devices-table .col-device {
+  width: 33%;
+}
+.group-devices-table .col-connection {
+  width: 15%;
+}
+.group-devices-table .col-status {
+  width: 22%;
+}
+.group-devices-table .col-latest {
+  width: 15%;
+}
+.group-devices-table .col-action {
+  width: 15%;
+}
+.group-devices-table th,
+.group-devices-table td {
+  padding: 10px 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Device column is allowed to wrap so a long vendor/model badge is shown in
+   full instead of being clipped by the ellipsis rule above. */
+.group-devices-table td:first-child {
+  overflow: visible;
+  white-space: normal;
+}
+/* Status pill must never be ellipsized into dots; let it render in full. */
+.group-devices-table td.status-cell {
+  overflow: visible;
+}
+/* Header: subtle and blends with the card (not a bold solid bar). */
+.group-devices-table th {
+  background: #e9eef5;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border-color);
+}
+/* Action cell holds the Backup button + overflow menu; let them sit on one
+   line without being clipped by the ellipsis rule above. */
+.group-devices-table td:last-child {
+  overflow: visible;
+  white-space: normal;
 }
 .group-section-empty {
   padding: var(--space-4);
@@ -555,6 +1283,22 @@ body {
   padding: var(--space-5);
   margin-bottom: var(--space-5);
   box-shadow: var(--shadow-sm);
+}
+.scheduler-backend-warning {
+  background: #fff9e6;
+  border: 1px solid #f0c93a;
+  color: #7a5b00;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.scheduler-backend-warning code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
 }
 .scheduler-card h3 {
   font-size: 15px;
@@ -582,7 +1326,7 @@ table {
 }
 th,
 td {
-  padding: 14px 16px;
+  padding: 12px 14px;
   text-align: left;
   border-bottom: 1px solid var(--border-color);
 }
@@ -601,8 +1345,7 @@ tbody tr:nth-child(even) {
   background: rgba(0, 0, 0, 0.02);
 }
 tbody tr:hover {
-  background: var(--accent) !important;
-  background: rgba(0, 212, 170, 0.1) !important;
+  background: var(--accent-soft) !important;
 }
 tbody tr:last-child td {
   border-bottom: none;
@@ -637,7 +1380,7 @@ td {
 .form-group textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.15);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
 }
 .form-group small {
   display: block;
@@ -668,6 +1411,11 @@ td {
 }
 .password-toggle:hover {
   color: var(--text-primary);
+}
+.password-toggle .icon {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 textarea {
   height: 200px;
@@ -813,6 +1561,84 @@ textarea#cfg-yaml-editor {
   align-items: center;
   margin-bottom: 24px;
 }
+/* View Configuration: title and load-status pill read as one line
+   ("View Configuration - Load Config Failed"), so they sit left-aligned
+   next to each other instead of split across the header. */
+.modal-header.view-config-header {
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  margin-bottom: 16px;
+}
+.vc-status-sep {
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-right: 2px;
+}
+/* Schedule popup inheritance hint: explains "follows Global" vs "has own
+   schedule" so a global save never looks like it rewrote group rows. */
+.sched-inherit-note {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: 0 0 var(--space-4);
+}
+.sched-inherit-note.follows {
+  border-left: 3px solid var(--accent);
+}
+.sched-inherit-note.has-own {
+  border-left: 3px solid var(--success);
+}
+.sched-inherit-note strong {
+  color: var(--text-primary);
+}
+/* Global Schedule card: the groups & devices currently covered by the one
+   global schedule (everything without an individual override). */
+.global-members-block {
+  margin-top: 12px;
+}
+.global-members-block > span {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.global-members-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.global-member-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: #eef2f7;
+  border: 1px solid var(--border-color);
+}
+.global-member-chip.group {
+  color: var(--accent);
+  background: rgba(37, 99, 235, 0.1);
+  border-color: transparent;
+  font-weight: 600;
+}
+/* Single tidy summary shown when no group/device has an individual schedule. */
+.global-member-chip.all {
+  color: var(--success-fg);
+  background: var(--success-light);
+  border-color: transparent;
+  font-weight: 600;
+  padding: 4px 12px;
+}
 .modal-header h2 {
   color: var(--text-primary);
   font-size: 20px;
@@ -943,56 +1769,80 @@ textarea#cfg-yaml-editor {
   color: var(--text-muted);
   font-size: 12px;
 }
+/* Label row with an inline helper action (e.g. "Group  + Add Group") */
+.label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.label-row label {
+  margin-bottom: 0;
+}
+.link-like-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.link-like-btn:hover {
+  text-decoration: underline;
+}
 textarea#cfg-yaml-editor {
   font-size: 13px;
   resize: vertical;
   min-height: 300px;
 }
 
+/* Medium screens: the 3-column layout gets cramped, so drop the permanent
+   Right Panel first and give that width back to Main Content. The panel
+   still isn't user-dismissible; it just doesn't fit at this width. */
+@media (max-width: 1200px) {
+  .right-panel {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
+  body {
+    overflow: auto;
+  }
+  .container {
+    height: auto;
+    min-height: 100vh;
+  }
+  .layout {
+    flex-direction: column;
+    height: auto;
+  }
   .header {
     flex-direction: column;
     align-items: flex-start;
   }
-  .header-right {
-    margin-top: var(--space-4);
-    width: 100%;
-    justify-content: space-between;
-  }
-  .app-layout {
-    flex-direction: column;
-  }
   .sidebar {
-    width: 100%;
-    position: static;
-    top: auto;
-  }
-  .sidebar-menu {
-    flex-direction: row;
-    overflow-x: auto;
+    height: auto;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: var(--space-2) var(--space-3);
     gap: var(--space-2);
   }
-  .sidebar-item.tab {
-    width: auto;
-    flex-shrink: 0;
-    border-left: none;
-    border-bottom: 3px solid transparent;
-  }
-  .sidebar-item.tab.active {
-    border-left-color: transparent;
-    border-bottom-color: var(--accent);
-  }
   .sidebar-menu {
+    height: auto;
     flex-wrap: wrap;
   }
-  .sidebar-item-group {
-    flex: 1 1 auto;
+  .sidebar-user {
+    margin-left: auto;
+    height: auto;
   }
-  .sidebar-submenu,
-  .sidebar-submenu.nested {
-    border-left: none;
-    margin-left: 0;
-    padding-left: var(--space-3);
+  .main-column {
+    height: auto;
+  }
+  .content {
+    flex: none;
+    overflow-y: visible;
   }
 }
 
@@ -1000,20 +1850,44 @@ textarea#cfg-yaml-editor {
 .device-cell {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 .device-name {
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1.25;
   color: var(--text-primary);
 }
 .device-ip {
-  font-size: 12px;
+  font-size: 14px;
+  color: #64748b;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+/* Vendor/model shown as a plain secondary label (no pill) directly under the
+   hostname, so it reads as the device kind without a heavy badge. */
+.device-model {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
   color: var(--text-secondary);
 }
 .connection-cell {
   white-space: nowrap;
   color: var(--text-secondary);
+}
+/* Connection shows protocol on the first line and its port beneath, so the
+   two pieces read as one unit without a separator dot. */
+.conn-proto {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+.conn-port {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 .cell-muted {
   color: var(--text-muted);
@@ -1027,20 +1901,61 @@ textarea#cfg-yaml-editor {
   display: inline-block;
 }
 .status-text {
-  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1;
   white-space: nowrap;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.status-text .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
 }
 .status-success {
-  color: var(--success);
+  color: var(--success-fg);
+  background: var(--success-light);
 }
 .status-failed {
-  color: var(--danger);
+  color: var(--danger-fg);
+  background: var(--danger-light);
+}
+/* Load Config status uses the SAME tinted pill as the device tab backup status
+   (green --success-light / red --danger-light with the 6px dot-to-label gap),
+   so the red dot has breathing room and the label reads as a clear chip. The
+   earlier background:none override made it look like bare touching text. */
+#view-config-status .status-text {
+  gap: 8px;
+}
+/* Copy Config / Close row: it sat flush against the config textarea with no
+   breathing room. Give it a small top margin and a slightly wider inter-button
+   gap — enough to look intentional, not so much it wastes panel height. */
+.view-config-actions,
+.flex-gap10.view-config-actions {
+  margin-top: 14px;
+  gap: 12px;
 }
 .status-pending {
-  color: #d97706;
+  color: var(--warning-fg);
+  background: var(--warning-light);
 }
 .status-muted {
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  background: #eef2f7;
+}
+.status-triggered {
+  color: var(--info-fg);
+  background: var(--info-light);
+}
+.status-waiting {
+  color: var(--warning-fg);
+  background: var(--warning-light);
 }
 
 /* ============ Row actions: primary "Backup" + overflow menu (⋮) ============ */
@@ -1054,15 +1969,28 @@ textarea#cfg-yaml-editor {
   font-size: 12px;
   font-weight: 600;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--primary);
-  background: var(--primary);
+  border: 1px solid var(--success);
+  background: var(--success);
   color: #fff;
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.1s ease;
 }
 .btn-row-primary:hover {
-  background: var(--primary-dark);
-  border-color: var(--primary-dark);
+  background: #0c9a6f;
+  border-color: #0c9a6f;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.35);
+  transform: translateY(-1px);
+}
+.btn-row-primary:active {
+  background: #0a8660;
+  border-color: #0a8660;
+  box-shadow: none;
+  transform: translateY(0);
 }
 .action-menu-wrap {
   position: relative;
@@ -1167,177 +2095,541 @@ textarea#cfg-yaml-editor {
   color: var(--text-muted);
 }
 
-/* ============ Migrated inline styles (auto-generated, 1 class per unique style) ============ */
-.u-d5748287 {
+/* ============ Backup History (Right Panel): grouped-by-date list + View screen ============ */
+.history-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.history-empty {
+  padding: var(--space-5) 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.history-date-group {
+  margin-bottom: var(--space-3);
+}
+.history-date-heading {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding-bottom: 6px;
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-color);
+}
+.history-date-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 4px;
+  border-radius: var(--radius-sm);
+}
+.history-item:hover {
+  background: var(--bg-card-hover);
+}
+.history-item .history-checkbox {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin: 0;
+}
+.history-item-text {
+  flex: 1;
+  min-width: 0;
+}
+.history-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-item-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.history-view-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.history-compare-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-color);
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-card);
+}
+.history-compare-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* View screen: a single backup, replacing the list in the same panel area */
+.history-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.history-back-btn {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 0 var(--space-2) 0;
+}
+.history-back-btn:hover {
+  text-decoration: underline;
+}
+.history-detail-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.history-detail-meta {
+  display: flex;
+  gap: var(--space-3);
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+.history-detail-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-top: var(--space-2);
+}
+.history-detail-status {
+  font-size: 13px;
+}
+.history-detail-config {
+  width: 100%;
+  min-height: 240px;
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+.history-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ============ Layout utility classes (renamed from generated u-xxxx hashes for readability) ============ */
+.toolbar-header-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 15px;
 }
-.u-4cc26fa9 {
+.flex-row-gap {
     display: flex;
     gap: 10px;
     align-items: center;
 }
-.u-66d8dc59 {
+.text-muted-right {
     font-size: 12px;
     color: var(--text-secondary);
     text-align: right;
 }
-.u-fd418926 {
+.inline-group {
     display: flex;
     align-items: center;
     gap: 10px;
 }
-.u-d7a5129f {
+.w-60 {
     width: 60px;
 }
-.u-053088a7 {
+.text-xs-muted {
     font-size: 11px;
     color: var(--text-muted);
 }
-.u-2f09aa77 {
+.pad-sm-x8 {
     padding: 6px 8px;
 }
-.u-11226291 {
+.search-filter-bar {
     display: flex;
     gap: 10px;
     margin-bottom: 15px;
     align-items: center;
 }
-.u-b3ef09f7 {
+.input-flex {
     padding: 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
     flex: 1;
 }
-.u-aa2d97f7 {
+.select-min150 {
     padding: 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
     min-width: 150px;
 }
-.u-b3a15a8a {
+.w-100 {
     width: 100px;
 }
-.u-d44c18c4 {
+.w-120 {
     width: 120px;
 }
-.u-db80b537 {
+.w-80 {
     width: 80px;
 }
-.u-1357bbd5 {
+.max-w-500 {
     max-width: 500px;
 }
-.u-3bbb810b {
+
+/* ============ Add Device form card (fills the tab area) ============ */
+.form-card {
+  /* Fill the whole content column up to the Right Panel edge (was 760px). */
+  max-width: none;
+  margin: var(--space-4) 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-6);
+}
+.form-card-header {
+  margin-bottom: var(--space-5);
+}
+.form-card-header h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.form-card-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.form-section {
+  margin-bottom: var(--space-6);
+}
+.form-section:last-of-type {
+  margin-bottom: var(--space-4);
+}
+.form-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-bottom: 6px;
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-color);
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4) var(--space-5);
+}
+.form-grid .form-group {
+  margin-bottom: 0;
+}
+.form-group.span-2 {
+  grid-column: 1 / -1;
+}
+/* Add Device Connection grid: 4 columns so Hostname|IP, Device|(Protocol+Port)
+   and Group|Credential each form one row. Protocol and Port share the right
+   half (.col-1 each); the other fields span two columns (half). Inline create
+   sub-forms stay within their own column (no full-width expansion). */
+.form-grid.cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+.form-grid.cols-4 > .form-group {
+  grid-column: span 2;
+}
+.form-grid.cols-4 > .form-group.col-1 {
+  grid-column: span 1;
+}
+.form-actions {
+  display: flex;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-color);
+}
+.form-actions .btn {
+  min-width: 140px;
+}
+@media (max-width: 600px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 900px) {
+  .form-grid.cols-4 {
+    grid-template-columns: 1fr;
+  }
+  .form-grid.cols-4 > .form-group,
+  .form-grid.cols-4 > .form-group.col-1 {
+    grid-column: auto;
+  }
+}
+
+/* ============ Add Device: inline "create group / credential" sub-forms ============ */
+/* The dropdown ends with a "＋ Create new …" pseudo-option; choosing it reveals
+   the mini-form below. The entity is created automatically on "Add Device". */
+.inline-subform-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin: 10px 0 0;
+}
+/* Expandable mini-form embedded directly inside the Add Device form. */
+.inline-subform {
+  display: none;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-card-hover);
+}
+.inline-subform.show {
+  display: block;
+}
+.inline-subform-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+/* Restore vertical spacing for fields nested inside the sub-form (the
+   .form-grid .form-group{margin-bottom:0} descendant rule would flatten them). */
+.inline-subform .form-group {
+  margin-bottom: 12px;
+}
+.inline-subform .form-group:last-of-type {
+  margin-bottom: 0;
+}
+/* Credential sub-form: two paired columns inside its own grid cell —
+   Label | Password, Username | Enable Password, then Description full row. */
+.inline-cred-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px var(--space-4);
+}
+/* Users tab: inline Change Password form row under the user's table row —
+   Username | New Password | Confirm Password across one line. */
+.user-cp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px var(--space-4);
+}
+.user-cp-form-row > td {
+  padding: 6px 12px 14px;
+}
+@media (max-width: 600px) {
+  .inline-cred-grid {
+    grid-template-columns: 1fr;
+  }
+  .user-cp-grid {
+    grid-template-columns: 1fr;
+  }
+}
+/* Credentials tab: search fills the row up to the Save button and matches the
+   themed input style used elsewhere in the app. */
+#credSearch {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  box-sizing: border-box;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  transition: border-color 0.2s;
+}
+#credSearch:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+#credSearch::placeholder {
+  color: var(--text-muted);
+}
+/* Models tab search — themed look; stretches to fill the toolbar so the
+   Select All / Deselect All / Save buttons sit neatly side by side at the
+   right edge. */
+#modelSearch {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  box-sizing: border-box;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  transition: border-color 0.2s;
+}
+#modelSearch:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+#modelSearch::placeholder {
+  color: var(--text-muted);
+}
+.mb-15 {
     margin-bottom: 15px;
 }
-.u-afb287a5 {
+.skeleton-bar {
     height: 40px;
     margin-bottom: 10px;
 }
-.u-f3d33437 {
+.skeleton-block {
     height: 120px;
 }
-.u-4df5ad23 {
+.hint-text {
     color: var(--text-secondary);
     margin-bottom: 10px;
 }
-.u-764ce2e4 {
+.row-between {
     display: flex;
     gap: 10px;
     align-items: center;
     justify-content: space-between;
 }
-.u-b63f2384 {
+.row-nowrap {
     display: flex;
     gap: 10px;
     align-items: center;
     flex-wrap: nowrap;
 }
-.u-9dd291e0 {
+.max-w-300 {
     max-width: 300px;
 }
-.u-f74950c5 {
+.nowrap {
     white-space: nowrap;
 }
-.u-6cac1254 {
+.mr-5 {
     margin-right: 5px;
 }
-.u-ad234c0e {
+.scroll-panel {
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
 }
-.u-339c04d2 {
+.sticky-header {
     position: sticky;
     top: 0;
     background: var(--primary);
     z-index: 10;
 }
-.u-f217f94b {
+.col-w60 {
     width: 60px;
     color: var(--text-inverse);
 }
-.u-b50aeaa0 {
+.col-w-actions {
+    width: 170px;
     color: var(--text-inverse);
 }
-.u-a5dd04b4 {
+.text-inverse {
+    color: var(--text-inverse);
+}
+.icon-inline {
     width: 20px;
     height: 20px;
     display: inline-block;
 }
-.u-fa486ad4 {
+.w-200 {
     width: 200px;
 }
-.u-c3ec7a65 {
+.textarea-limit {
     max-width: 300px;
     height: 100%;
     box-sizing: border-box;
 }
-.u-d9900c66 {
+.w-150 {
     width: 150px;
 }
-.u-e52938e0 {
+.max-w-600 {
     max-width: 600px;
 }
-.u-88debead {
+.note-muted {
     margin-bottom: 15px;
     color: #666;
 }
-.u-f989ce90 {
+/* Consistent tab-content header: one large icon on the left, vertically
+   centred against the title + description block on the right. The icon size
+   spans the height of the title and description lines. */
+.tab-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.tab-header-icon {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+.tab-header-text {
+  min-width: 0;
+}
+.tab-header-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+.tab-header .sublabel {
+  margin-top: 4px;
+}
+.chip-row {
     display: flex;
     align-items: center;
     gap: 8px;
 }
-.u-1cfcc2c3 {
+.w-22 {
     width: 22px;
     height: 22px;
 }
-.u-007724b9 {
+.sublabel {
     color: var(--text-secondary);
     font-size: 13px;
     margin-top: 6px;
 }
-.u-9c766357 {
+.util-hidden {
     display: none;
 }
-.u-a2acec28 {
+.legend-row {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-bottom: 16px;
 }
-.u-1c244e6b {
+.m-0 {
     margin: 0;
 }
-.u-d2a621cd {
+.caption {
     font-size: 12px;
     color: var(--text-muted);
     margin-bottom: 16px;
 }
-.u-4bbe7d38 {
+.form-toolbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1345,187 +2637,216 @@ textarea#cfg-yaml-editor {
     flex-wrap: wrap;
     gap: 10px;
 }
-.u-57e800c6 {
+.mb-20 {
     margin-bottom: 20px;
 }
-.u-97584c3d {
+.title-icon {
     width: 24px;
     height: 24px;
     vertical-align: middle;
     margin-right: 8px;
 }
-.u-a2b1832f {
+.callout-success {
     margin-bottom: 15px;
     padding: 10px;
     background: #e8f5e9;
     border-radius: 5px;
 }
-.u-df502e5e {
+.inline-help {
     margin-top: 5px;
     font-size: 13px;
 }
-.u-2e39b4b8 {
+.w-100-ml {
     width: 100px;
     margin-left: 10px;
 }
-.u-6fb7baa2 {
+.callout-neutral {
     margin-bottom: 15px;
     padding: 10px;
     background: #f0f0f0;
     border-radius: 5px;
 }
-.u-700b9992 {
+.callout-info {
     margin-bottom: 15px;
     padding: 10px;
     background: #e3f2fd;
     border-radius: 5px;
 }
-.u-2892f14a {
+.callout-warn {
     margin-bottom: 15px;
     padding: 10px;
     background: #fff3e0;
     border-radius: 5px;
 }
-.u-273e413e {
+.mb-10 {
     margin-bottom: 10px;
 }
-.u-34cd5db1 {
+.ml-10 {
     margin-left: 10px;
 }
-.u-fb5e284d {
+.mono-block {
     font-family: monospace;
     width: 100%;
 }
-.u-8d2af8e4 {
+.util-hidden-mt {
     display: none;
     margin-top: 20px;
 }
-.u-747827a3 {
+.btn-row {
     display: flex;
     gap: 10px;
     margin-bottom: 10px;
 }
-.u-d47b3b88 {
+.code-scroll {
     max-height: 400px;
     overflow: auto;
     font-family: monospace;
 }
-.u-0de1f981 {
+.mt-20 {
     margin-top: 20px;
 }
-.u-29c21bf5 {
+.mt-10 {
+    margin-top: 10px;
+}
+.flex-gap10 {
     display: flex;
     gap: 10px;
 }
-.u-d2dc0a7a {
+.flex-1 {
     flex: 1;
 }
-.u-86314ec6 {
+.bg-muted {
     background: #f5f5f5;
 }
-.u-b9fd24c1 {
+.max-w-800 {
     max-width: 800px;
 }
-.u-2dfdc704 {
+.font-bold {
     font-weight: bold;
 }
-.u-4eaa4572 {
+.info-panel {
     background: #f5f5f5;
     padding: 10px;
     border-radius: 4px;
     margin-bottom: 15px;
 }
-.u-536d4c5e {
+.scroll-400 {
     max-height: 400px;
     overflow-y: auto;
 }
-.u-aebc9b08 {
+.config-textarea {
     height: 400px;
     width: 100%;
-    font-family: monospace;
+    font-family: "SF Mono", "Fira Code", "JetBrains Mono", Consolas, monospace;
     font-size: 12px;
     box-sizing: border-box;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+    resize: vertical;
+    outline: none;
 }
-.u-e0d1c34d {
+.config-textarea:focus {
+    border-color: var(--primary-light);
+}
+.actions-row {
     margin-top: 15px;
     display: flex;
     gap: 10px;
 }
-.u-18a38d90 {
+.max-w-900 {
     max-width: 900px;
 }
-.u-314627e8 {
+.bordered-scroll {
     max-height: 300px;
     overflow-y: auto;
     border: 1px solid #ddd;
     border-radius: 4px;
     padding: 10px;
 }
-.u-e8dbada6 {
+.w-250 {
     width: 250px;
 }
-.u-a3161db2 {
+.mt-15 {
     margin-top: 15px;
 }
-.u-30796480 {
+.preview-box {
     background: #f5f5f5;
     padding: 10px;
     border-radius: 4px;
     max-height: 300px;
     overflow-y: auto;
 }
-.u-ab499f32 {
+.diff-modal-shell {
     max-width: 1600px;
     width: 98vw;
     height: 90vh;
     display: flex;
     flex-direction: column;
 }
-.u-ee25f55b {
+.diff-modal-header {
     flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 15px;
 }
-.u-f9c6e8a7 {
+.diff-header-actions {
     margin-left: auto;
     display: flex;
     gap: 10px;
     align-items: center;
 }
-.u-66e8d242 {
+.diff-mode-btn {
     padding: 5px 12px;
     font-size: 11px;
 }
-.u-cf772466 {
+.diff-meta-bar {
     margin-bottom: 12px;
     flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 20px;
 }
-.u-7b6573e6 {
+.text-grey666 {
     color: #666;
 }
-.u-8e38432b {
+.diff-legend-right {
     margin-left: auto;
     display: flex;
     gap: 15px;
     font-size: 12px;
 }
-.u-b6d2977c {
+/* Old/Left + New/Right chips aligned over their respective diff panes. */
+.diff-legend-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+.diff-legend-row .diff-old-tag {
+    flex: 1;
+    text-align: left;
+}
+.diff-legend-row .diff-new-tag {
+    flex: 1;
+    text-align: right;
+}
+.diff-old-tag {
     background: #2d2d2d;
     color: #fff;
     padding: 2px 10px;
     border-radius: 3px;
 }
-.u-5da990cd {
+.diff-new-tag {
     background: #1a1a1a;
     color: #fff;
     padding: 2px 10px;
     border-radius: 3px;
 }
-.u-18fee083 {
+.diff-split-container {
     flex: 1;
     display: flex;
     border: 1px solid #ddd;
@@ -1533,7 +2854,7 @@ textarea#cfg-yaml-editor {
     overflow: hidden;
     min-height: 0;
 }
-.u-70a77ea8 {
+.diff-pane-old {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -1541,39 +2862,61 @@ textarea#cfg-yaml-editor {
     background: #fafafa;
     overflow: hidden;
 }
-.u-191ebbc3 {
-    padding: 8px 12px;
-    background: #2d2d2d;
-    color: #fff;
-    font-size: 12px;
-    font-weight: 500;
+.diff-pane-old-header {
+    padding: 10px 14px;
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
     display: flex;
-    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-color);
 }
-.u-583c48ff {
+/* OLD / NEW badges: merged into each pane's header line and color-coded so the
+   older vs newer side reads at a glance (header itself matches group headers). */
+.diff-side-tag {
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+.diff-side-old {
+    color: var(--warning-fg);
+    background: var(--warning-light);
+}
+.diff-side-new {
+    color: var(--success-fg);
+    background: var(--success-light);
+}
+.diff-pane-body {
     flex: 1;
     overflow: auto;
     font-family: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
     font-size: 12px;
     line-height: 1.5;
 }
-.u-de6fb977 {
+.diff-pane-new {
     flex: 1;
     display: flex;
     flex-direction: column;
     background: #fff;
     overflow: hidden;
 }
-.u-eae9e61e {
-    padding: 8px 12px;
-    background: #1a1a1a;
-    color: #fff;
-    font-size: 12px;
-    font-weight: 500;
+.diff-pane-new-header {
+    padding: 10px 14px;
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
     display: flex;
-    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-color);
 }
-.u-5fa943c8 {
+.diff-legend {
     margin-top: 12px;
     flex-shrink: 0;
     display: flex;
@@ -1581,43 +2924,147 @@ textarea#cfg-yaml-editor {
     font-size: 12px;
     align-items: center;
 }
-.u-597f459d {
+.legend-item {
     display: flex;
     align-items: center;
     gap: 6px;
 }
-.u-26497e97 {
+.swatch-added {
     width: 16px;
     height: 16px;
     background: #c8e6c9;
     border: 1px solid #81c784;
 }
-.u-629792c9 {
+.swatch-removed {
     width: 16px;
     height: 16px;
     background: #ffcdd2;
     border: 1px solid #e57373;
 }
-.u-3ad5817f {
+.swatch-modified {
     width: 16px;
     height: 16px;
     background: #fff9c4;
     border: 1px solid #ffd54f;
 }
-.u-100be274 {
+.swatch-unchanged {
     width: 16px;
     height: 16px;
     background: #e0e0e0;
     border: 1px solid #bbb;
 }
-.u-9b2237ca {
+.ml-auto {
     margin-left: auto;
 }
-.u-9607cba7 {
+.btn-pad {
     padding: 6px 16px;
 }
-.u-139b05ae {
+.actions-row-mt {
     display: flex;
     gap: 10px;
     margin-top: 20px;
+}
+
+/* ============ Non-blocking inline confirmation toast (replaces native confirm) ============ */
+.btn-xs {
+  padding: 5px 12px !important;
+  font-size: 12px !important;
+  height: 30px;
+}
+.confirm-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translate(-50%, 20px);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  padding: 12px 18px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-color);
+  z-index: 2000;
+  max-width: 92vw;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.confirm-toast.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+.confirm-toast-msg {
+  font-size: 13px;
+  font-weight: 500;
+}
+.confirm-toast-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.confirm-toast .btn {
+  box-shadow: none;
+}
+/* Dimming overlay for blocking confirmations (delete device/group): covers the
+   whole page so nothing but the toast's Delete/Cancel is clickable. Sits just
+   below the toast (z-index 2000). */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 1999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.confirm-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Icon shown in the message-only info toast (e.g. copy-to-clipboard). */
+.confirm-toast-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--success);
+  flex-shrink: 0;
+}
+.confirm-toast-icon-err {
+  color: var(--danger);
+}
+/* Inline restart RESULT: a compact status chip shown beside the Restart
+   Oxidized button after the trigger runs (the confirmation stays a popup). */
+.restart-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 480px;
+  min-width: 0;
+  margin: 0 16px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
+.restart-status[hidden] {
+  display: none;
+}
+.restart-status.ok {
+  color: var(--success);
+  background: #ecfdf5;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+.restart-status.err {
+  color: var(--danger);
+  background: #fef2f2;
+  border-color: rgba(239, 68, 68, 0.35);
 }

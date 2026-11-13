@@ -9,19 +9,17 @@ pages_bp = Blueprint("pages", __name__)
 
 
 def is_user_password_changed(username):
-    """Check if user has changed their password (from legacy user_status.json)."""
-    import os
-    import json
-    USER_STATUS_FILE = "/oxidized_config/user_status.json"
+    """Whether the user no longer needs the first-login password change.
 
-    if os.path.exists(USER_STATUS_FILE):
-        try:
-            with open(USER_STATUS_FILE, "r", encoding="utf-8") as f:
-                status = json.load(f)
-                return status.get(username, {}).get("password_changed", False)
-        except:
-            pass
-    return False
+    The source of truth is the users.must_change_password column in SQLite
+    (the legacy user_status.json file was removed). Returns True when the
+    account exists and does NOT carry the must-change flag.
+    """
+    from models.user import User
+    user = User.get_by_username(username)
+    if not user:
+        return False
+    return not user.must_change_password
 
 
 def login_required(f):

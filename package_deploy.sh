@@ -410,13 +410,18 @@ EOF
 setup_env() {
     log_info "$(t 'configuring_env')" "$(t 'configuring_env_zh')"
 
-    cat > "$PROJECT_DIR/.env" << 'EOF'
+    # Generate a unique Flask session key per deployment; without it the app
+    # falls back to a random per-restart key (users get logged out on reboot).
+    secret_key="$(openssl rand -hex 32 2>/dev/null || date +%s%N | sha256sum | head -c 64)"
+
+    cat > "$PROJECT_DIR/.env" << EOF
 # Oxidized Authentication
 OXIDIZED_USER=admin
 OXIDIZED_PASSWORD=admin
 
 # Flask Configuration
 FLASK_ENV=production
+SECRET_KEY=${secret_key}
 EOF
 
     log_info "$(t 'env_configured')" "$(t 'env_configured_zh')"

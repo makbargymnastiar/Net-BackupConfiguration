@@ -3,13 +3,17 @@ Configuration management for Node Manager.
 """
 
 import os
+import secrets
 
 
 class Config:
     """Configuration class that reads from environment variables."""
 
     # Flask settings
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
+    # A hardcoded fallback key would let anyone forge session cookies, so when
+    # SECRET_KEY is not provided we use a random per-process key instead
+    # (sessions simply expire on restart until it is set in the environment).
+    SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
     DEBUG = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
 
     # Database

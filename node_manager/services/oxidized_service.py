@@ -91,148 +91,149 @@ def get_oxidized_version_history(node_name):
         return []
 
 
+def _oxidized_git_base():
+    """Return the configured Oxidized git repo base path.
+
+    Reads the top-level 'repo:' value from the Oxidized config file
+    (output.git.repo) if present, else falls back to the default config dir.
+    A plain line scan is used because the config contains Ruby tags
+    (e.g. !ruby/regexp) that a strict YAML parser would reject.
+    """
+    default_base = "/home/oxidized/.config/oxidized"
+    try:
+        if os.path.exists(OXIDIZED_CONFIG_FILE):
+            with open(OXIDIZED_CONFIG_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if stripped.startswith("repo:"):
+                        value = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+                        if value:
+                            return value.rstrip("/")
+                        break
+    except Exception as e:
+        print(f"Error reading Oxidized repo path from config: {e}")
+    return default_base
+
+
 def get_oxidized_version_config(node_name, oid, epoch=None):
-    """Get node specific version config using direct git access.
+    """Get a specific historical version's config content for a node.
 
-    Oxidized 0.36 with oxidized-web 0.18.1 has a bug where /node/version/view
-    returns NoMethodError. We work around it by accessing the git repo directly
-    via Docker API.
+    Oxidized's git output stores configs in a git repository, and when nodes
+    belong to a group it keeps a SEPARATE repo per group (laid out as
+    '<repo>', '<repo>-<group>' or '<repo>/<group>' depending on settings).
 
-    Additionally, Oxidized's internal @gitcache can return stale OIDs that no
-    longer exist in the git repo. When the OID doesn't exist, we fall back to
-    timestamp-based lookup using the epoch parameter.
+    Previously this function exec'd 'git -C <one hardcoded path>', which was
+    both the wrong base directory and blind to per-group repos. That made
+    every stored version after a config change unreadable, so Browse/Compare
+    appeared to show no new backup even though Oxidized HAD committed it.
+
+    This version DISCOVERS all git repos under the Oxidized config area and
+    searches each for the requested commit oid (falling back to an
+    epoch-timestamp lookup when the oid is stale, per Oxidized's @gitcache
+    bug). This restores multi-version browsing/compare regardless of how
+    Oxidized has laid out its repos.
     """
     import docker
 
-    print(
-        f"DEBUG: get_oxidized_version_config called with "
-        f"node={node_name}, oid={oid}, epoch={epoch}",
-        flush=True
-    )
-
     try:
         client = docker.from_env()
-        git_dir = "/home/oxidized/.config/oxidized"
         container = client.containers.get("oxidized")
+    except Exception as e:
+        print(f"ERROR: Docker unavailable for version config: {e}")
+        return None
 
-        # Helper to run git command and return (exit_code, output)
-        def git_exec(args):
-            result = container.exec_run(
-                ["git", "-C", git_dir, "-c", f"safe.directory={git_dir}"] + args
-            )
-            return result.exit_code, result.output.decode(
-                "utf-8", errors="replace"
-            )
+    base_dir = "/home/oxidized/.config/oxidized"
 
-        # Try direct OID lookup first (works when Oxidized cache is fresh)
-        for path_variant in [
-            f"{oid}:{node_name}",
-            f"{oid}:/{node_name}",
-            oid
-        ]:
-            ec, out = git_exec(["show", path_variant])
+    def git(repo, args):
+        result = container.exec_run(
+            ["git", "-c", "safe.directory=*", "-C", repo] + args
+        )
+        return result.exit_code, result.output.decode(
+            "utf-8", errors="replace"
+        )
+
+    # Candidate repos: the configured repo base + default + every directory
+    # that contains a .git (covers per-group repos). Discovery is best-effort.
+    repos = {base_dir, _oxidized_git_base()}
+    try:
+        found = container.exec_run(
+            ["find", base_dir, "-maxdepth", "4", "-type", "d", "-name", ".git"]
+        )
+        if found.exit_code == 0:
+            for line in found.output.decode("utf-8", errors="replace").splitlines():
+                line = line.strip()
+                if line.endswith("/.git"):
+                    repos.add(line[: -len("/.git")])
+    except Exception as e:
+        print(f"WARN: git repo discovery failed, using base paths only: {e}")
+
+    def node_paths_in_tree(repo, ref):
+        """Return file paths in the tree at 'ref' that belong to node_name,
+        preferring an exact root-level match over a group sub-directory one."""
+        ec, tree = git(repo, ["ls-tree", "-r", "--name-only", ref])
+        if ec != 0:
+            return []
+        exact, nested = [], []
+        for raw in tree.splitlines():
+            p = raw.strip()
+            if p == node_name:
+                exact.append(p)
+            elif p.endswith("/" + node_name):
+                nested.append(p)
+        return exact + nested
+
+    # 1) Direct oid lookup across every discovered repo.
+    for repo in repos:
+        for p in node_paths_in_tree(repo, oid):
+            ec, cfg = git(repo, ["show", f"{oid}:{p}"])
             if ec == 0:
-                print(
-                    f"DEBUG: Found config via direct OID lookup: "
-                    f"oid={path_variant}",
-                    flush=True
-                )
-                return out
+                return cfg
+        # Flat-path fallback for repos without a resolvable ls-tree.
+        for p in (node_name, "/" + node_name):
+            ec, cfg = git(repo, ["show", f"{oid}:{p}"])
+            if ec == 0:
+                return cfg
 
-        # OID not found - Oxidized cache is stale.
-        # Use epoch timestamp to find the commit.
-        if epoch:
-            print(
-                f"DEBUG: OID {oid} not found in git, "
-                f"falling back to epoch {epoch}",
-                flush=True
-            )
-
-            # IMPORTANT:
-            # epoch can arrive from Flask request.args as a string.
-            # datetime.fromtimestamp() requires int/float.
+    # 2) Epoch-based fallback: newest commit touching this node at/before the
+    # timestamp, then read that exact file from the same repo.
+    if epoch:
+        try:
+            epoch_int = int(epoch)
+        except (TypeError, ValueError):
+            epoch_int = None
+        if epoch_int is not None:
             from datetime import datetime, timezone
 
-            try:
-                epoch = int(epoch)
-            except (TypeError, ValueError):
-                print(
-                    f"ERROR: Invalid epoch value: {epoch}",
-                    flush=True
-                )
-                return None
-
             date_str = datetime.fromtimestamp(
-                epoch,
-                tz=timezone.utc
+                epoch_int, tz=timezone.utc
             ).strftime("%Y-%m-%d %H:%M:%S")
-
-            print(
-                f"DEBUG: Searching git history until {date_str}",
-                flush=True
-            )
-
-            # Use git log to find commits at or before this date
-            # that touch node_name.
-            ec, commit_list = git_exec(
-                [
-                    "log",
-                    "--until",
-                    date_str,
-                    "--format=%H",
-                    "--name-only",
-                    "--",
-                    node_name
-                ]
-            )
-
-            if ec == 0 and commit_list.strip():
-                lines = commit_list.strip().split("\n")
-
-                if lines:
-                    commit_hash = lines[0].strip()
-
-                    if commit_hash:
-                        print(
-                            f"DEBUG: Found commit {commit_hash} "
-                            f"via epoch lookup for {node_name}",
-                            flush=True
+            for repo in repos:
+                ec, listing = git(
+                    repo,
+                    ["log", "--until", date_str, "--format=%H", "--", node_name],
+                )
+                if ec == 0 and listing.strip():
+                    commit_hash = listing.splitlines()[0].strip()
+                    if not commit_hash:
+                        continue
+                    for p in node_paths_in_tree(repo, commit_hash):
+                        ec2, cfg = git(
+                            repo, ["show", f"{commit_hash}:{p}"]
                         )
-
-                        ec2, config = git_exec(
-                            ["show", f"{commit_hash}:{node_name}"]
-                        )
-
                         if ec2 == 0:
-                            return config
-
-                        # Try with leading slash
-                        ec3, config3 = git_exec(
-                            ["show", f"{commit_hash}:/{node_name}"]
+                            return cfg
+                    for p in (node_name, "/" + node_name):
+                        ec2, cfg = git(
+                            repo, ["show", f"{commit_hash}:{p}"]
                         )
+                        if ec2 == 0:
+                            return cfg
 
-                        if ec3 == 0:
-                            return config3
-
-        print(
-            f"ERROR: Git show failed for oid={oid}, "
-            f"node={node_name}",
-            flush=True
-        )
-        return None
-
-    except Exception as e:
-        import traceback
-
-        print(
-            f"ERROR: Exception in get_oxidized_version_config: {e}",
-            flush=True
-        )
-        print(
-            f"ERROR: Traceback: {traceback.format_exc()}",
-            flush=True
-        )
-        return None
+    print(
+        f"ERROR: version config not found for node={node_name}, "
+        f"oid={oid}, epoch={epoch}"
+    )
+    return None
 
 
 def trigger_oxidized_backup(node_name):
