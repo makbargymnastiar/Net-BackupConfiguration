@@ -16,6 +16,10 @@ _test_db_fd, _test_db_path = tempfile.mkstemp(suffix=".db")
 os.close(_test_db_fd)
 os.environ["DATABASE_PATH"] = _test_db_path
 
+# app.py now fail-fasts when SECRET_KEY is blank, so provide a non-secret test
+# value BEFORE the app module is imported (import happens lazily in fixtures).
+os.environ.setdefault("SECRET_KEY", "pytest-only-insecure-test-key")
+
 # Now we can safely import database and app
 import database
 

@@ -39,7 +39,7 @@ services:
       OXIDIZED_PASSWORD: ${OXIDIZED_PASSWORD:-admin}
       # Fail fast with a clear message instead of passing an empty string
       # into the container (an empty SECRET_KEY breaks Flask sessions).
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env - generate one with: openssl rand -hex 32}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY wajib diisi}
 
       DATABASE_PATH: /oxidized_config/nodes.db
       CONFIG_FILE: /oxidized_config/nodes.csv

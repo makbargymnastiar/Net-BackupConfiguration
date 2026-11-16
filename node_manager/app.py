@@ -13,7 +13,6 @@ import json
 import csv
 import os
 import base64
-import secrets
 from datetime import datetime
 from functools import wraps
 
@@ -38,26 +37,30 @@ import services.oxidized_service as oxidized_service
 import services.docker_service as docker_service
 import services.activity_log_service as activity_log_service
 
-# Flask session signing key. Treat missing/blank SECRET_KEY as unset: Docker
-# Compose passes `${SECRET_KEY:-}` as an EMPTY STRING when .env is absent,
-# and os.getenv(key, default) would then skip the default and set a blank
-# key — Flask raises "The session is unavailable because no secret key was
-# set" on the first login. A hardcoded fallback is also unsafe (anyone with
-# the repo could forge session cookies), so generate a random per-process
-# key instead and print a loud, actionable error. Sessions then expire on
-# every restart until SECRET_KEY is provided in .env.
-_SECRET_KEY = (os.getenv("SECRET_KEY") or "").strip()
-if _SECRET_KEY:
-    app.secret_key = _SECRET_KEY
-else:
-    app.secret_key = secrets.token_hex(32)
-    print(
-        "ERROR: SECRET_KEY is not set in the environment. A random key was "
-        "generated so login works, but ALL sessions expire on every restart. "
-        "Fix: create .env next to docker-compose.yml containing "
-        "SECRET_KEY=<output of: openssl rand -hex 32> and recreate the "
-        "container."
-    )
+# Flask session signing key. Deliberately NO hardcoded fallback (anyone with
+# the repo could forge session cookies) and NO silent random fallback (that
+# would invalidate every session on each restart and hide the misconfig). A
+# blank or whitespace-only SECRET_KEY is a configuration error, so we fail
+# fast at startup with a clear, actionable message. docker-compose already
+# guards with `${SECRET_KEY:?...}`; this is defense-in-depth for every run
+# mode (systemd, gunicorn, local, container). Use os.getenv(..., "").strip()
+# so an EMPTY STRING (what Compose `${SECRET_KEY:-}` injects when .env is
+# missing) is treated the same as unset.
+def _resolve_secret_key(raw):
+    """Return SECRET_KEY stripped; raise a clear config error if blank."""
+    key = (raw or "").strip()
+    if not key:
+        raise RuntimeError(
+            "CONFIG ERROR: SECRET_KEY is required but is empty or unset. "
+            "Create a .env file next to docker-compose.yml containing "
+            "SECRET_KEY=<long random value>, generated with "
+            "`openssl rand -hex 32`. Never commit .env to Git "
+            "(it is already listed in .gitignore)."
+        )
+    return key
+
+
+app.secret_key = _resolve_secret_key(os.getenv("SECRET_KEY", ""))
 
 CONFIG_FILE = os.getenv("CONFIG_FILE", "/oxidized_config/nodes.csv")
 OXIDIZED_API_URL = os.getenv("OXIDIZED_API_URL", "http://oxidized:8888")

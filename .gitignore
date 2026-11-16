@@ -7,8 +7,11 @@ docker-compose.override.yml
 docker-compose.override.yaml
 
 # Test/Debug files
-test_*.ps1
-test_*.py
+# Anchor these to the repo root: they are meant for ad-hoc scratch/debug files,
+# NOT for the real test suite under node_manager/tests/ (an unanchored
+# `test_*.py` silently blocked new test files from being tracked).
+/test_*.ps1
+/test_*.py
 debug*.txt
 cookies.txt
 
