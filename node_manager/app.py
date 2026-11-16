@@ -13,6 +13,7 @@ import json
 import csv
 import os
 import base64
+import secrets
 from datetime import datetime
 from functools import wraps
 
@@ -37,7 +38,26 @@ import services.oxidized_service as oxidized_service
 import services.docker_service as docker_service
 import services.activity_log_service as activity_log_service
 
-app.secret_key = os.getenv("SECRET_KEY", "oxidized-node-manager-secret-key-2024")
+# Flask session signing key. Treat missing/blank SECRET_KEY as unset: Docker
+# Compose passes `${SECRET_KEY:-}` as an EMPTY STRING when .env is absent,
+# and os.getenv(key, default) would then skip the default and set a blank
+# key — Flask raises "The session is unavailable because no secret key was
+# set" on the first login. A hardcoded fallback is also unsafe (anyone with
+# the repo could forge session cookies), so generate a random per-process
+# key instead and print a loud, actionable error. Sessions then expire on
+# every restart until SECRET_KEY is provided in .env.
+_SECRET_KEY = (os.getenv("SECRET_KEY") or "").strip()
+if _SECRET_KEY:
+    app.secret_key = _SECRET_KEY
+else:
+    app.secret_key = secrets.token_hex(32)
+    print(
+        "ERROR: SECRET_KEY is not set in the environment. A random key was "
+        "generated so login works, but ALL sessions expire on every restart. "
+        "Fix: create .env next to docker-compose.yml containing "
+        "SECRET_KEY=<output of: openssl rand -hex 32> and recreate the "
+        "container."
+    )
 
 CONFIG_FILE = os.getenv("CONFIG_FILE", "/oxidized_config/nodes.csv")
 OXIDIZED_API_URL = os.getenv("OXIDIZED_API_URL", "http://oxidized:8888")
