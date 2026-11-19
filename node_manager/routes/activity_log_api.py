@@ -35,15 +35,22 @@ def create_activity_log_entry():
         except (TypeError, ValueError):
             return None
 
-    insert = _as_int(data.get("insert"))
-    delete = _as_int(data.get("delete"))
+    insert = _as_int(data.get("added", data.get("insert")))
+    delete = _as_int(data.get("removed", data.get("delete")))
+    changed = _as_int(data.get("changed"))
     timestamp = data.get("timestamp")
     message = (data.get("message") or "").strip()
 
     try:
         entry = activity_log_service.append_entry(
-            name=name, ip=ip, status=status, insert=insert, delete=delete,
-            timestamp=timestamp, message=message or None
+            name=name,
+            ip=ip,
+            status=status,
+            insert=insert,
+            delete=delete,
+            changed=changed,
+            timestamp=timestamp,
+            message=message or None,
         )
     except Exception as e:  # disk/permission problems shouldn't crash the UI
         return jsonify({"success": False, "error": f"Failed to write activity log: {e}"}), 500

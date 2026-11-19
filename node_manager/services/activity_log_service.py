@@ -31,27 +31,34 @@ def set_config(activity_log_file):
     ACTIVITY_LOG_FILE = activity_log_file
 
 
-def _format_diff(status, insert, delete):
+def _format_diff(status, insert, delete, changed):
     """Render the trailing diff field for a log line."""
     if status != "SUCCESS":
         # Failed backups have no meaningful diff.
         return "-"
     ins = insert or 0
     dele = delete or 0
-    if ins == 0 and dele == 0:
+    modified = changed or 0
+    if insert is None and delete is None and changed is None:
+        return "-"
+    if ins == 0 and dele == 0 and modified == 0:
         return "no change"
-    return f"+{ins} -{dele}"
+    tokens = [f"+{ins}", f"-{dele}"]
+    if modified:
+        tokens.append(f"~{modified}")
+    return " ".join(tokens)
 
 
 def _parse_diff(diff_field):
-    """Inverse of _format_diff -> (insert, delete) as ints or None."""
+    """Parse both legacy +/- and current +/-/~ activity-log diff fields."""
     field = (diff_field or "").strip()
     if field in ("", "-", "no change"):
         if field == "no change":
-            return 0, 0
-        return None, None
+            return 0, 0, 0
+        return None, None, None
     insert = None
     delete = None
+    changed = None
     for token in field.split():
         if token.startswith("+"):
             try:
@@ -63,10 +70,24 @@ def _parse_diff(diff_field):
                 delete = int(token[1:])
             except ValueError:
                 pass
-    return insert, delete
+        elif token.startswith("~"):
+            try:
+                changed = int(token[1:])
+            except ValueError:
+                pass
+    return insert, delete, changed
 
 
-def append_entry(name, ip="", status="SUCCESS", insert=None, delete=None, timestamp=None, message=None):
+def append_entry(
+    name,
+    ip="",
+    status="SUCCESS",
+    insert=None,
+    delete=None,
+    changed=None,
+    timestamp=None,
+    message=None,
+):
     """Append one activity-log line to the text file. Returns the parsed entry.
 
     `message` is an optional human-readable label (e.g. "Node updated
@@ -88,7 +109,7 @@ def append_entry(name, ip="", status="SUCCESS", insert=None, delete=None, timest
         str(message or "").replace("|", "/").replace("\n", " ").replace("\r", " ").strip()
     )
 
-    diff = _format_diff(status, insert, delete)
+    diff = _format_diff(status, insert, delete, changed)
     if safe_message:
         line = f"{ts} | {safe_name} | {safe_ip} | {status} | {diff} | {safe_message}"
     else:
@@ -102,7 +123,7 @@ def append_entry(name, ip="", status="SUCCESS", insert=None, delete=None, timest
 
     _trim_if_needed()
 
-    ins, dele = _parse_diff(diff)
+    ins, dele, modified = _parse_diff(diff)
     return {
         "timestamp": ts,
         "name": safe_name,
@@ -110,6 +131,9 @@ def append_entry(name, ip="", status="SUCCESS", insert=None, delete=None, timest
         "status": status,
         "insert": ins,
         "delete": dele,
+        "added": ins,
+        "removed": dele,
+        "changed": modified,
         "message": safe_message or None,
     }
 
@@ -156,7 +180,7 @@ def read_entries(limit=200):
         status = (parts[3] if len(parts) > 3 else "").upper()
         diff_field = parts[4] if len(parts) > 4 else ""
         message = parts[5] if len(parts) > 5 else ""
-        ins, dele = _parse_diff(diff_field)
+        ins, dele, modified = _parse_diff(diff_field)
         entries.append(
             {
                 "timestamp": ts,
@@ -165,6 +189,9 @@ def read_entries(limit=200):
                 "status": status,
                 "insert": ins,
                 "delete": dele,
+                "added": ins,
+                "removed": dele,
+                "changed": modified,
                 "message": message or None,
             }
         )

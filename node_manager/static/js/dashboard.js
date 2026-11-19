@@ -522,6 +522,127 @@ let actionPanelCurrentModal = null;
 // Tracks the device the panel is currently "about" (shown in the small
 // context banner at the top of the action section).
 let currentPanelDevice = null;
+let deviceAccordionActive = false;
+let activeDeviceAccordionSection = null;
+
+const DEVICE_ACCORDION_SECTIONS = {
+  "Load Config": "load-config",
+  "Backup History": "backup-history",
+  "Schedule Backup": "schedule-backup",
+  "Edit Node": "edit-node",
+};
+
+function renderDevicePanelHeader(deviceName) {
+  const node = (allNodes || []).find((item) => item.name === deviceName);
+  const title = document.getElementById("right-panel-action-title");
+  if (!title || !node) return;
+  const status = oxidizedStatus[deviceName] || {};
+  const statusValue = String(status.status || status.last_status || "").toLowerCase();
+  const statusText = ["success", "successful", "completed"].includes(statusValue)
+    ? "Success"
+    : ["failed", "error"].includes(statusValue)
+      ? "Failed"
+      : "Not Connected";
+  const statusClass =
+    statusText === "Success"
+      ? "status-success"
+      : statusText === "Failed"
+        ? "status-failed"
+        : "status-not-connected";
+  title.innerHTML =
+    `<span class="device-panel-heading"><strong>${escapeHtml(deviceName)}</strong>` +
+    `<span>${escapeHtml(node.ip || "-")}</span>` +
+    `<span class="status-text ${statusClass}"><span class="status-dot"></span>${statusText}</span></span>`;
+}
+
+function openDeviceManagerPanel(deviceName) {
+  const node = (allNodes || []).find((item) => item.name === deviceName);
+  if (!node) return;
+  if (actionPanelCurrentModal) {
+    const modal = document.getElementById(actionPanelCurrentModal);
+    const content = document.getElementById(actionPanelCurrentModal + "Content");
+    if (modal && content) modal.appendChild(content);
+    actionPanelCurrentModal = null;
+  }
+
+  currentPanelDevice = deviceName;
+  deviceAccordionActive = true;
+  activeDeviceAccordionSection = "load-config";
+  const panel = document.querySelector(".right-panel");
+  if (panel) {
+    panel.classList.add("right-panel-device-active");
+    panel.classList.remove("right-panel-compact-action", "right-panel-diff");
+  }
+  const actionSection = document.querySelector(".right-panel-action");
+  if (actionSection) actionSection.classList.remove("right-panel-action-hidden");
+  renderDevicePanelHeader(deviceName);
+  const body = document.getElementById("action-detail-panel");
+  if (!body) return;
+  body.classList.remove("panel-split-mode", "panel-config-mode", "panel-diff-mode");
+  body.innerHTML = `
+    <div class="device-accordion">
+      ${[
+        ["load-config", "Load Config"],
+        ["backup-history", "Backup History"],
+        ["schedule-backup", "Schedule Backup"],
+        ["edit-node", "Edit Node"],
+      ]
+        .map(
+          ([key, label]) => `
+            <section class="device-accordion-item ${key === activeDeviceAccordionSection ? "open" : ""}" data-device-section="${key}">
+              <button type="button" class="device-accordion-header" onclick="toggleDeviceAccordion('${key}')">
+                <span>${label}</span>
+                <svg class="icon chevron" viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
+              </button>
+              <div class="device-accordion-content" id="device-accordion-${key}" ${key === activeDeviceAccordionSection ? "" : "hidden"}></div>
+            </section>`,
+        )
+        .join("")}
+      <footer class="device-accordion-footer">
+        <button type="button" class="btn btn-danger-outline" onclick="deleteNode('${escapeHtml(deviceName)}')">Delete Node</button>
+      </footer>
+    </div>
+  `;
+  renderDevices();
+  viewConfig(deviceName);
+}
+
+function manageDevicePanel(deviceName) {
+  if (deviceAccordionActive && currentPanelDevice === deviceName) {
+    renderActionPanelPlaceholder();
+    return;
+  }
+  openDeviceManagerPanel(deviceName);
+}
+
+function toggleDeviceAccordion(section) {
+  if (!deviceAccordionActive || !currentPanelDevice) return;
+  const wasOpen = activeDeviceAccordionSection === section;
+  document.querySelectorAll(".device-accordion-item").forEach((item) => {
+    const isOpen = !wasOpen && item.dataset.deviceSection === section;
+    item.classList.toggle("open", isOpen);
+    const content = item.querySelector(".device-accordion-content");
+    if (!content) return;
+    clearTimeout(content._accordionCloseTimer);
+    if (isOpen) {
+      content.hidden = false;
+      content.classList.remove("closing");
+    } else if (!content.hidden) {
+      content.classList.add("closing");
+      content._accordionCloseTimer = setTimeout(() => {
+        if (content.classList.contains("closing")) content.hidden = true;
+      }, 160);
+    }
+  });
+  activeDeviceAccordionSection = wasOpen ? null : section;
+  if (wasOpen) return;
+
+  if (section === "load-config") viewConfig(currentPanelDevice);
+  else if (section === "backup-history") viewVersionHistory(currentPanelDevice);
+  else if (section === "schedule-backup")
+    openDeviceOrGroupSchedule("node", currentPanelDevice);
+  else if (section === "edit-node") openEditModal(currentPanelDevice);
+}
 
 // Idle state: the Action section is hidden entirely, so the Right Panel is
 // just Activity Log (which then naturally fills the whole panel, since it's
@@ -545,7 +666,11 @@ function renderActionPanelPlaceholder() {
   if (panelEl) {
     panelEl.classList.remove("right-panel-diff");
     panelEl.classList.remove("right-panel-compact-action");
+    panelEl.classList.remove("right-panel-device-active");
   }
+  const wasDevicePanel = deviceAccordionActive;
+  deviceAccordionActive = false;
+  activeDeviceAccordionSection = null;
   diffShownInPanel = false;
   const actionSection = document.querySelector(".right-panel-action");
   if (actionSection) actionSection.classList.add("right-panel-action-hidden");
@@ -558,6 +683,10 @@ function renderActionPanelPlaceholder() {
   }
   const titleEl = document.getElementById("right-panel-action-title");
   if (titleEl) titleEl.textContent = "Action / Detail";
+  if (wasDevicePanel) {
+    currentPanelDevice = null;
+    renderDevices();
+  }
 }
 
 // Per-action glyphs that mirror the icons in the device row's pencil menu, so
@@ -599,6 +728,37 @@ const COMPACT_ACTION_LABELS = new Set([
 // "Action / Detail" label. Returns the empty slot element the caller should
 // fill in.
 function setActionPanelContext(deviceName, actionLabel) {
+  if (
+    deviceAccordionActive &&
+    deviceName === currentPanelDevice &&
+    DEVICE_ACCORDION_SECTIONS[actionLabel]
+  ) {
+    if (actionPanelCurrentModal) {
+      const prevModal = document.getElementById(actionPanelCurrentModal);
+      const prevContent = document.getElementById(
+        actionPanelCurrentModal + "Content",
+      );
+      if (prevModal && prevContent) prevModal.appendChild(prevContent);
+      actionPanelCurrentModal = null;
+    }
+    activeDeviceAccordionSection = DEVICE_ACCORDION_SECTIONS[actionLabel];
+    document.querySelectorAll(".device-accordion-item").forEach((item) => {
+      const isOpen = item.dataset.deviceSection === activeDeviceAccordionSection;
+      item.classList.toggle("open", isOpen);
+      const content = item.querySelector(".device-accordion-content");
+      if (content) content.hidden = !isOpen;
+    });
+    const body = document.getElementById(
+      `device-accordion-${activeDeviceAccordionSection}`,
+    );
+    if (!body) return null;
+    body.innerHTML = "";
+    const slot = document.createElement("div");
+    slot.className = "action-panel-slot";
+    body.appendChild(slot);
+    return slot;
+  }
+
   const panelBody = document.getElementById("action-detail-panel");
   if (!panelBody) return null;
   currentPanelDevice = deviceName;
@@ -669,6 +829,13 @@ function revealModalInActionPanel(modalId, deviceName, actionLabel) {
 // stale content behind.
 function resetActionPanelIfShowing(modalId) {
   if (actionPanelCurrentModal === modalId) {
+    if (deviceAccordionActive) {
+      const modal = document.getElementById(modalId);
+      const content = document.getElementById(modalId + "Content");
+      if (modal && content) modal.appendChild(content);
+      actionPanelCurrentModal = null;
+      return;
+    }
     // Let renderActionPanelPlaceholder() read actionPanelCurrentModal itself
     // (it needs it to find the content and move it back to its modal before
     // clearing the panel) — nulling it here first was causing that lookup
@@ -686,7 +853,7 @@ function resetActionPanelIfShowing(modalId) {
 // ephemeral list of "pending" triggers that haven't reached a final result yet;
 // once a backup finishes we compute its diff, persist it, and drop the pending
 // copy.
-let activityLogServerEntries = []; // [{timestamp,name,ip,status,insert,delete,message}] newest first
+let activityLogServerEntries = []; // [{timestamp,name,ip,status,added,removed,changed,message}] newest first
 let activityLogPending = []; // browser-only optimistic rows, newest first
 
 function getNodeIp(name) {
@@ -731,7 +898,7 @@ function addPendingActivityLogEntry(hostname) {
 // entry can carry the +X/-Y badge. Degrades to "no badge" (null/null) when
 // history or diff isn't available — it never blocks the log write.
 function computeBackupDiff(hostname) {
-  const empty = { insert: null, delete: null };
+  const empty = { added: null, removed: null, changed: null };
   return fetch(`/api/oxidized/node/${encodeURIComponent(hostname)}/history`)
     .then((r) => (r.ok ? r.json() : null))
     .then((history) => {
@@ -750,7 +917,11 @@ function computeBackupDiff(hostname) {
         .then((r) => (r.ok ? r.json() : null))
         .then((d) =>
           d && d.stats
-            ? { insert: d.stats.insert, delete: d.stats.delete }
+            ? {
+                added: d.stats.added ?? d.stats.insert,
+                removed: d.stats.removed ?? d.stats.delete,
+                changed: d.stats.changed ?? null,
+              }
             : empty,
         )
         .catch(() => empty);
@@ -768,7 +939,7 @@ function updateActivityLogEntry(id, status, timestampMs) {
   const ts = timestampMs || Date.now();
   const finalStatus = status === "success" ? "SUCCESS" : "FAILED";
 
-  const persist = (insert, del) => {
+  const persist = (diff) => {
     const isoTs = new Date(ts).toISOString();
     const removePending = () => {
       const idx = activityLogPending.findIndex((e) => e.id === id);
@@ -781,8 +952,9 @@ function updateActivityLogEntry(id, status, timestampMs) {
         name: hostname,
         ip,
         status: finalStatus,
-        insert,
-        delete: del,
+        added: diff.added,
+        removed: diff.removed,
+        changed: diff.changed,
         timestamp: isoTs,
       }),
     })
@@ -799,8 +971,11 @@ function updateActivityLogEntry(id, status, timestampMs) {
             name: hostname,
             ip,
             status: finalStatus,
-            insert,
-            delete: del,
+            insert: diff.added,
+            delete: diff.removed,
+            added: diff.added,
+            removed: diff.removed,
+            changed: diff.changed,
           });
         }
         renderActivityLog();
@@ -812,17 +987,20 @@ function updateActivityLogEntry(id, status, timestampMs) {
           name: hostname,
           ip,
           status: finalStatus,
-          insert,
-          delete: del,
+          insert: diff.added,
+          delete: diff.removed,
+          added: diff.added,
+          removed: diff.removed,
+          changed: diff.changed,
         });
         renderActivityLog();
       });
   };
 
   if (finalStatus === "SUCCESS") {
-    computeBackupDiff(hostname).then((d) => persist(d.insert, d.delete));
+    computeBackupDiff(hostname).then(persist);
   } else {
-    persist(null, null);
+    persist({ added: null, removed: null, changed: null });
   }
 }
 
@@ -840,23 +1018,24 @@ const ACTIVITY_LOG_EMPTY_HTML = `
   </div>
 `;
 
-// Builds the +/- diff badge shown inline next to the hostname. Only successful
-// backups carry a badge; "no change" (grey) when both counts are 0, otherwise
-// +X (green) / -Y (red). A null/unknown diff (older rows, or diff unavailable)
-// renders nothing.
+// Builds the change badges in the right column; missing legacy `changed`
+// values remain optional while their existing added/removed counts still show.
 function activityLogDiffBadge(item) {
-  if (item.status !== "success") return "";
-  const ins = item.insert;
-  const del = item.delete;
-  if (ins == null && del == null) return "";
+  if (!["success", "completed"].includes(item.status)) return "";
+  const ins = item.added ?? item.insert;
+  const del = item.removed ?? item.delete;
+  const changed = item.changed;
+  if (ins == null && del == null && changed == null) return "";
   const i = ins || 0;
   const d = del || 0;
-  if (i === 0 && d === 0) {
+  const c = changed || 0;
+  if (i === 0 && d === 0 && c === 0) {
     return '<span class="activity-log-diff activity-log-diff-none">no change</span>';
   }
   let html = "";
-  if (i > 0) html += `<span class="activity-log-diff activity-log-diff-add">+${i}</span>`;
-  if (d > 0) html += `<span class="activity-log-diff activity-log-diff-del">-${d}</span>`;
+  if (i > 0) html += `<span class="activity-log-diff activity-log-diff-add">+${i} added</span>`;
+  if (d > 0) html += `<span class="activity-log-diff activity-log-diff-del">-${d} removed</span>`;
+  if (c > 0) html += `<span class="activity-log-diff activity-log-diff-change">~${c} changed</span>`;
   return html;
 }
 
@@ -881,6 +1060,9 @@ function renderActivityLog() {
     timestamp: e.timestamp,
     insert: null,
     delete: null,
+    added: null,
+    removed: null,
+    changed: null,
   }));
   const serverItems = (activityLogServerEntries || []).map((e) => ({
     status: (e.status || "").toLowerCase(), // SUCCESS/FAILED -> success/failed
@@ -889,6 +1071,9 @@ function renderActivityLog() {
     timestamp: e.timestamp,
     insert: e.insert,
     delete: e.delete,
+    added: e.added,
+    removed: e.removed,
+    changed: e.changed,
     message: e.message || "",
   }));
   const list = pendingItems.concat(serverItems);
@@ -928,19 +1113,20 @@ function renderActivityLog() {
       if (entry.message) {
         titleText = escapeHtml(toTitleCase(entry.message));
       }
-      const badge = entry.message ? "" : activityLogDiffBadge(entry);
-      // No IP line: the hostname alone identifies the device here, and the
-      // extra line made every entry read cluttered.
+      const badges = entry.message ? "" : activityLogDiffBadge(entry);
       return `
         <div class="activity-log-item">
-          <span class="activity-log-dot ${dotClass}" aria-hidden="true"></span>
-          <div class="activity-log-text">
-            <div class="activity-log-title ${titleClass}">
+          <div class="activity-log-title ${titleClass}">
+            <span class="activity-log-dot ${dotClass}" aria-hidden="true"></span>
               ${titleText}
+          </div>
+          <div class="activity-log-details">
+            <div class="activity-log-info">
+              <div class="activity-log-hostname">${escapeHtml(entry.hostname)}</div>
+              <div class="activity-log-date">${escapeHtml(dateLine)}</div>
+              <div class="activity-log-time">${escapeHtml(timeLine)}</div>
             </div>
-            <div class="activity-log-hostname">${escapeHtml(entry.hostname)}${badge}</div>
-            <div class="activity-log-date">${escapeHtml(dateLine)}</div>
-            <div class="activity-log-time">${escapeHtml(timeLine)}</div>
+            <div class="activity-log-diff-column">${badges}</div>
           </div>
         </div>
       `;
@@ -1308,7 +1494,7 @@ function getModelDisplayName(modelId) {
   return found ? formatModelDisplay(found.name) : modelId;
 }
 
-function renderNodeRow(node) {
+function renderNodeRowLegacy(node) {
   return `
         <tr>
             <td>
@@ -1356,12 +1542,46 @@ function renderNodeRow(node) {
     `;
 }
 
+function renderNodeRow(node) {
+  const active = deviceAccordionActive && currentPanelDevice === node.name;
+  return `
+    <tr class="${active ? "device-row-active" : ""}" data-device-name="${escapeHtml(node.name)}">
+      <td>
+        <div class="device-cell">
+          <div class="device-name">${escapeHtml(node.name)}</div>
+          <div class="device-model">${escapeHtml(getModelDisplayName(node.model))}</div>
+          <div class="device-ip">${escapeHtml(node.ip)}</div>
+        </div>
+      </td>
+      <td class="connection-cell"><div class="conn-proto">${escapeHtml((node.protocol || "-").toUpperCase())}</div><div class="conn-port">${node.port || "-"}</div></td>
+      <td class="status-cell">${getOxidizedStatusOnly(node.name)}</td>
+      <td>${formatLatestBackupDate(oxidizedStatus[node.name])}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-row-primary" onclick="triggerBackup('${escapeHtml(node.name)}')" title="Trigger Backup">Backup</button>
+          <button class="action-menu-toggle" onclick="manageDevicePanel('${escapeHtml(node.name)}')" title="Manage Device" aria-label="Manage Device">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+              <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+              <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
+            </svg>
+          </button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
 // Unified Devices view: every device shown grouped by its group (group
 // sections always visible, no dropdown/accordion). The redundant "Group"
 // column is gone because the group is now the section header. The search box
 // and the group filter narrow this single view.
 function renderDevices() {
   closeAllActionMenus();
+  if (deviceAccordionActive && currentPanelDevice) {
+    renderDevicePanelHeader(currentPanelDevice);
+  }
   const container = document.getElementById("groups-sections");
   if (!container) return;
 
@@ -1508,10 +1728,14 @@ function viewConfig(nodeName) {
         document.getElementById("viewConfigContent").value = data.config;
         setPill("Backup Completed", true);
       } else {
+        document.getElementById("viewConfigContent").value =
+          data.error || "Configuration is unavailable because no valid backup has been saved.";
         setPill("Backup Failed", false);
       }
     })
     .catch(() => {
+      document.getElementById("viewConfigContent").value =
+        "Configuration could not be loaded. Check the backup status and try again.";
       setPill("Backup Failed", false);
     });
 }
@@ -1997,7 +2221,7 @@ function showDiff(nodeName, oid1, oid2, epoch1, epoch2, oldLabel, newLabel) {
   )
     .then((r) => r.json())
     .then((data) => {
-      if (data.aligned_lines && data.aligned_lines.length > 0) {
+      if (Array.isArray(data.aligned_lines)) {
         window.diffData = data.aligned_lines;
         window.diffStats = data.stats;
         renderSplitDiff(data.aligned_lines, data.stats);
@@ -2020,92 +2244,119 @@ function showDiff(nodeName, oid1, oid2, epoch1, epoch2, oldLabel, newLabel) {
     });
 }
 
+let diffScrollSyncing = false;
+
 function syncScroll(source, targetId) {
-  let isScrolling = false;
-  if (isScrolling) return;
-  isScrolling = true;
+  if (diffScrollSyncing) return;
+  diffScrollSyncing = true;
   const target = document.getElementById(targetId);
   if (target) {
     target.scrollTop = source.scrollTop;
     target.scrollLeft = source.scrollLeft;
   }
   requestAnimationFrame(() => {
-    isScrolling = false;
+    diffScrollSyncing = false;
   });
+}
+
+const diffJumpIndexes = { added: 0, removed: 0, modified: 0 };
+
+function renderDiffLine(lineNumber, content, kind, isSpacer) {
+  const cellClass = isSpacer ? "diff-line-cell diff-spacer" : `diff-line-cell diff-cell-${kind}`;
+  return `<div class="diff-line-row" data-diff-kind="${kind}">
+    <span class="diff-line-number">${lineNumber || ""}</span>
+    <span class="${cellClass}">${isSpacer ? "" : escapeHtml(content || "")}</span>
+  </div>`;
+}
+
+function renderDiffStats(stats) {
+  const same = stats.same ?? stats.equal ?? 0;
+  const added = stats.added ?? stats.insert ?? 0;
+  const removed = stats.removed ?? stats.delete ?? 0;
+  const changed = stats.changed ?? 0;
+  const html =
+    `<span class="diff-stat diff-stat-same">${same} same</span>` +
+    (added > 0
+      ? `<button type="button" class="diff-stat diff-stat-added" onclick="jumpToDiffChange('added')">+${added}</button>`
+      : "") +
+    (removed > 0
+      ? `<button type="button" class="diff-stat diff-stat-removed" onclick="jumpToDiffChange('removed')">-${removed}</button>`
+      : "") +
+    (changed > 0
+      ? `<button type="button" class="diff-stat diff-stat-modified" onclick="jumpToDiffChange('modified')">~${changed}</button>`
+      : "");
+  document.getElementById("diff-old-count").innerHTML = html;
+  document.getElementById("diff-new-count").innerHTML = html;
 }
 
 function renderSplitDiff(lines, stats) {
   let oldHtml = "";
   let newHtml = "";
-  let modifiedPair = null;
-  const mode = window.diffMode || "all";
+  Object.keys(diffJumpIndexes).forEach((key) => {
+    diffJumpIndexes[key] = 0;
+  });
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  (lines || []).forEach((line) => {
+    let kind = "same";
+    if (line.type === "insert") kind = "added";
+    else if (line.type === "delete") kind = "removed";
+    else if (line.type === "modified") kind = "modified";
 
-    if (line.type === "equal") {
-      if (mode === "diff") continue;
-      oldHtml += `<div style="display: flex; min-height: 22px;">
-                <span style="width: 50px; padding: 0 8px; color: #888; text-align: right; user-select: none; flex-shrink: 0; border-right: 1px solid #ddd;">${line.old_line}</span>
-                <span style="padding: 0 8px; white-space: pre; flex: 1; background: #e8e8e8;">${escapeHtml(line.old_content)}</span>
-            </div>`;
-      newHtml += `<div style="display: flex; min-height: 22px;">
-                <span style="width: 50px; padding: 0 8px; color: #888; text-align: right; user-select: none; flex-shrink: 0; border-right: 1px solid #ddd;">${line.new_line}</span>
-                <span style="padding: 0 8px; white-space: pre; flex: 1; background: #e8e8e8;">${escapeHtml(line.new_content)}</span>
-            </div>`;
-    } else if (line.type === "delete") {
-      const bgColor = "#ffcdd2";
-      oldHtml += `<div style="display: flex; min-height: 22px; background: ${bgColor};">
-                <span style="width: 50px; padding: 0 8px; color: #888; text-align: right; user-select: none; flex-shrink: 0; border-right: 1px solid #ddd;">${line.old_line || ""}</span>
-                <span style="padding: 0 8px; white-space: pre; flex: 1;">${escapeHtml(line.old_content)}</span>
-            </div>`;
-      if (mode === "all") {
-        newHtml += `<div style="display: flex; min-height: 22px; background: ${bgColor}; opacity: 0.4;">
-                    <span style="width: 50px; padding: 0 8px; color: #888; text-align: right; user-select: none; flex-shrink: 0; border-right: 1px solid #ddd;"></span>
-                    <span style="padding: 0 8px; white-space: pre; flex: 1;"></span>
-                </div>`;
-      }
-    } else if (line.type === "insert") {
-      const bgColor = "#c8e6c9";
-      if (modifiedPair === null && i > 0 && lines[i - 1].type === "delete") {
-        modifiedPair = i;
-      }
-      const bg = modifiedPair !== null ? "#fff9c4" : bgColor;
-      newHtml += `<div style="display: flex; min-height: 22px; background: ${bg};">
-                <span style="width: 50px; padding: 0 8px; color: #888; text-align: right; user-select: none; flex-shrink: 0; border-right: 1px solid #ddd;">${line.new_line || ""}</span>
-                <span style="padding: 0 8px; white-space: pre; flex: 1;">${escapeHtml(line.new_content)}</span>
-            </div>`;
-      if (mode === "all") {
-        oldHtml += `<div style="display: flex; min-height: 22px; background: ${bg}; opacity: 0.4;">
-                    <span style="width: 50px; padding: 0 8px; color: #888; text-align: right; user-select: none; flex-shrink: 0; border-right: 1px solid #ddd;"></span>
-                    <span style="padding: 0 8px; white-space: pre; flex: 1;"></span>
-                </div>`;
-      }
-    }
-
-    if (modifiedPair !== null && i - modifiedPair > 0) {
-      modifiedPair = null;
-    }
-  }
+    oldHtml += renderDiffLine(
+      line.old_line,
+      line.old_content,
+      kind,
+      line.old_line == null,
+    );
+    newHtml += renderDiffLine(
+      line.new_line,
+      line.new_content,
+      kind,
+      line.new_line == null,
+    );
+  });
 
   document.getElementById("diff-old-content").innerHTML =
-    oldHtml || '<div style="padding: 20px; color: #666;">No content</div>';
+    oldHtml || '<div class="diff-empty">No content</div>';
   document.getElementById("diff-new-content").innerHTML =
-    newHtml || '<div style="padding: 20px; color: #666;">No content</div>';
+    newHtml || '<div class="diff-empty">No content</div>';
+  if (stats) renderDiffStats(stats);
+}
 
-  if (stats) {
-    if (mode === "diff") {
-      document.getElementById("diff-old-count").textContent =
-        `${stats.delete} removed`;
-      document.getElementById("diff-new-count").textContent =
-        `${stats.insert} added`;
-    } else {
-      document.getElementById("diff-old-count").textContent =
-        `${stats.equal} same | ${stats.delete} removed`;
-      document.getElementById("diff-new-count").textContent =
-        `${stats.equal} same | ${stats.insert} added`;
-    }
-  }
+function jumpToDiffChange(kind) {
+  const oldPane = document.getElementById("diff-old-content");
+  const newPane = document.getElementById("diff-new-content");
+  if (!oldPane || !newPane) return;
+  const oldRows = Array.from(
+    oldPane.querySelectorAll(`.diff-line-row[data-diff-kind="${kind}"]`),
+  ).filter((row) => {
+    const previous = row.previousElementSibling;
+    return !previous || previous.dataset.diffKind !== kind;
+  });
+  const newRows = Array.from(
+    newPane.querySelectorAll(`.diff-line-row[data-diff-kind="${kind}"]`),
+  ).filter((row) => {
+    const previous = row.previousElementSibling;
+    return !previous || previous.dataset.diffKind !== kind;
+  });
+  if (!oldRows.length || !newRows.length) return;
+
+  const index = diffJumpIndexes[kind] % oldRows.length;
+  diffJumpIndexes[kind] = index + 1;
+  [oldRows[index], newRows[index]].forEach((row) => {
+    const pane = row.parentElement;
+    const rowTop = row.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+    pane.scrollTo({
+      top: rowTop - (pane.clientHeight - row.offsetHeight) / 2,
+      behavior: "smooth",
+    });
+    row.classList.add("diff-jump-highlight");
+    clearTimeout(row._diffHighlightTimer);
+    row._diffHighlightTimer = setTimeout(
+      () => row.classList.remove("diff-jump-highlight"),
+      1400,
+    );
+  });
 }
 
 function closeVersionHistoryModal() {
@@ -2593,6 +2844,7 @@ function findScheduleOverrideForTarget(type, target) {
 // "Schedule" button). Re-uses an existing override for that target instead
 // of creating a duplicate, if one is already configured.
 function openDeviceOrGroupSchedule(type, target) {
+  if (type !== "node" && deviceAccordionActive) renderActionPanelPlaceholder();
   const existing = findScheduleOverrideForTarget(type, target);
   openScheduleOverrideModal(existing ? existing.id : null, type, target);
 }

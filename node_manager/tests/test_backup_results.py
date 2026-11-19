@@ -241,3 +241,76 @@ def test_diff_normalizes_empty_and_iso_epochs(test_client_with_auth, monkeypatch
 
     assert response.status_code == 200
     assert received_epochs == [None, 1767323045]
+
+
+def test_compare_groups_replacements_as_modified_and_keeps_rows_aligned():
+    from routes.oxidized_api import _compare_configurations
+
+    lines, stats = _compare_configurations(
+        "first\nold setting\nmiddle\nold extra\nlast\n",
+        "first\nnew setting\nmiddle\nnew extra\nlast\nadded\n",
+    )
+
+    assert stats == {
+        "same": 3,
+        "added": 1,
+        "removed": 0,
+        "changed": 2,
+        "equal": 3,
+        "insert": 1,
+        "delete": 0,
+    }
+    assert [line["type"] for line in lines] == [
+        "equal",
+        "modified",
+        "equal",
+        "modified",
+        "equal",
+        "insert",
+    ]
+    assert lines[1]["old_content"] == "old setting"
+    assert lines[1]["new_content"] == "new setting"
+
+
+def test_activity_log_exposes_new_counts_and_parses_legacy_lines(tmp_path, monkeypatch):
+    from services import activity_log_service
+
+    log_path = tmp_path / "activity.log"
+    monkeypatch.setattr(activity_log_service, "ACTIVITY_LOG_FILE", str(log_path))
+    log_path.write_text(
+        "2026-11-18T10:00:00 | old-device | 192.0.2.1 | SUCCESS | +2 -1\n",
+        encoding="utf-8",
+    )
+
+    activity_log_service.append_entry(
+        "router",
+        "192.0.2.2",
+        "SUCCESS",
+        insert=1,
+        delete=2,
+        changed=3,
+        timestamp="2026-11-19T10:00:00",
+    )
+
+    entries = activity_log_service.read_entries()
+    assert entries[0]["added"] == entries[0]["insert"] == 1
+    assert entries[0]["removed"] == entries[0]["delete"] == 2
+    assert entries[0]["changed"] == 3
+    assert entries[1]["added"] == entries[1]["insert"] == 2
+    assert entries[1]["removed"] == entries[1]["delete"] == 1
+    assert entries[1]["changed"] is None
+
+
+def test_activity_log_parses_failed_and_no_change_entries(tmp_path, monkeypatch):
+    from services import activity_log_service
+
+    log_path = tmp_path / "activity.log"
+    monkeypatch.setattr(activity_log_service, "ACTIVITY_LOG_FILE", str(log_path))
+    activity_log_service.append_entry("failed-device", status="FAILED")
+    activity_log_service.append_entry("unchanged-device", status="SUCCESS", insert=0, delete=0)
+
+    entries = activity_log_service.read_entries()
+    assert entries[0]["added"] == entries[0]["removed"] == entries[0]["changed"] == 0
+    assert entries[1]["added"] is None
+    assert entries[1]["removed"] is None
+    assert entries[1]["changed"] is None

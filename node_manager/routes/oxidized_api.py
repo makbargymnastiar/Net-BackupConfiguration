@@ -89,6 +89,111 @@ def _normalize_epoch(value):
             return None
 
 
+def _compare_configurations(old_config, new_config):
+    """Return SequenceMatcher-aligned lines and edit-aware change counts."""
+    old_lines = old_config.splitlines()
+    new_lines = new_config.splitlines()
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
+    aligned_lines = []
+    same = added = removed = changed = 0
+    old_line_num = new_line_num = 0
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        old_count = i2 - i1
+        new_count = j2 - j1
+        if tag == "equal":
+            same += old_count
+            for offset in range(old_count):
+                old_line_num += 1
+                new_line_num += 1
+                aligned_lines.append(
+                    {
+                        "type": "equal",
+                        "old_line": old_line_num,
+                        "new_line": new_line_num,
+                        "old_content": old_lines[i1 + offset],
+                        "new_content": new_lines[j1 + offset],
+                    }
+                )
+        elif tag == "replace":
+            changed += max(old_count, new_count)
+            for offset in range(max(old_count, new_count)):
+                has_old = offset < old_count
+                has_new = offset < new_count
+                if has_old:
+                    old_line_num += 1
+                if has_new:
+                    new_line_num += 1
+                aligned_lines.append(
+                    {
+                        "type": "modified",
+                        "old_line": old_line_num if has_old else None,
+                        "new_line": new_line_num if has_new else None,
+                        "old_content": old_lines[i1 + offset] if has_old else "",
+                        "new_content": new_lines[j1 + offset] if has_new else "",
+                    }
+                )
+        elif tag == "delete":
+            removed += old_count
+            for offset in range(old_count):
+                old_line_num += 1
+                aligned_lines.append(
+                    {
+                        "type": "delete",
+                        "old_line": old_line_num,
+                        "new_line": None,
+                        "old_content": old_lines[i1 + offset],
+                        "new_content": "",
+                    }
+                )
+        elif tag == "insert":
+            added += new_count
+            for offset in range(new_count):
+                new_line_num += 1
+                aligned_lines.append(
+                    {
+                        "type": "insert",
+                        "old_line": None,
+                        "new_line": new_line_num,
+                        "old_content": "",
+                        "new_content": new_lines[j1 + offset],
+                    }
+                )
+
+    stats = {
+        "same": same,
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+        # Preserve the original names for existing API clients.
+        "equal": same,
+        "insert": added,
+        "delete": removed,
+    }
+    return aligned_lines, stats
+
+
+def _latest_backup_diff_stats(node_name):
+    history = get_oxidized_version_history(node_name)
+    if len(history) < 2:
+        return {"added": 0, "removed": 0, "changed": 0}
+    newest, previous = history[0], history[1]
+    old_config = get_oxidized_version_config(
+        node_name, previous.get("oid"), _normalize_epoch(previous.get("time"))
+    )
+    new_config = get_oxidized_version_config(
+        node_name, newest.get("oid"), _normalize_epoch(newest.get("time"))
+    )
+    if not isinstance(old_config, str) or not isinstance(new_config, str):
+        return {"added": None, "removed": None, "changed": None}
+    _, stats = _compare_configurations(old_config, new_config)
+    return {
+        "added": stats["added"],
+        "removed": stats["removed"],
+        "changed": stats["changed"],
+    }
+
+
 def _record_scheduled_backup_results(status_data):
     """Validate newly completed Oxidized runs and persist their final outcomes."""
     for node_name, payload in _status_entries(status_data):
@@ -137,10 +242,18 @@ def _record_scheduled_backup_results(status_data):
                 and previous_status == final_status.lower()
             )
             if not is_recent_manual_result:
+                diff_stats = (
+                    _latest_backup_diff_stats(node_name)
+                    if final_status == "SUCCESS"
+                    else {}
+                )
                 activity_log_service.append_entry(
                     node_name,
                     node.ip,
                     final_status,
+                    insert=diff_stats.get("added"),
+                    delete=diff_stats.get("removed"),
+                    changed=diff_stats.get("changed"),
                     timestamp=completed_at,
                 )
             payload["status"] = node.last_status
@@ -345,75 +458,10 @@ def oxidized_node_diff(node_name):
     if config1 is None or config2 is None:
         return jsonify({"error": "Failed to get version configs"}), 404
 
-    lines1 = config1.splitlines()
-    lines2 = config2.splitlines()
-
-    # Use difflib to generate aligned diff
-    matcher = difflib.SequenceMatcher(None, lines1, lines2)
-    aligned_lines = []
-
-    old_line_num = 0
-    new_line_num = 0
-
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == 'equal':
-            for k in range(i2 - i1):
-                old_line_num += 1
-                new_line_num += 1
-                aligned_lines.append({
-                    "type": "equal",
-                    "old_line": old_line_num,
-                    "new_line": new_line_num,
-                    "old_content": lines1[i1 + k],
-                    "new_content": lines2[j1 + k]
-                })
-        elif tag == 'replace':
-            for k in range(i2 - i1):
-                old_line_num += 1
-                aligned_lines.append({
-                    "type": "delete",
-                    "old_line": old_line_num,
-                    "new_line": None,
-                    "old_content": lines1[i1 + k],
-                    "new_content": ""
-                })
-            for k in range(j2 - j1):
-                new_line_num += 1
-                aligned_lines.append({
-                    "type": "insert",
-                    "old_line": None,
-                    "new_line": new_line_num,
-                    "old_content": "",
-                    "new_content": lines2[j1 + k]
-                })
-        elif tag == 'delete':
-            for k in range(i2 - i1):
-                old_line_num += 1
-                aligned_lines.append({
-                    "type": "delete",
-                    "old_line": old_line_num,
-                    "new_line": None,
-                    "old_content": lines1[i1 + k],
-                    "new_content": ""
-                })
-        elif tag == 'insert':
-            for k in range(j2 - j1):
-                new_line_num += 1
-                aligned_lines.append({
-                    "type": "insert",
-                    "old_line": None,
-                    "new_line": new_line_num,
-                    "old_content": "",
-                    "new_content": lines2[j1 + k]
-                })
-
+    aligned_lines, stats = _compare_configurations(config1, config2)
     return jsonify({
         "aligned_lines": aligned_lines,
-        "stats": {
-            "equal": sum(1 for l in aligned_lines if l["type"] == "equal"),
-            "insert": sum(1 for l in aligned_lines if l["type"] == "insert"),
-            "delete": sum(1 for l in aligned_lines if l["type"] == "delete"),
-        }
+        "stats": stats,
     })
 
 

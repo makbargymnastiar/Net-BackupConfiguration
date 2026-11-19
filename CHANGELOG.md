@@ -12,6 +12,7 @@
 | **设备状态与历史视图** — 初始连接状态显示为琥珀色 `Not Connected`；Backup History 增加 Full View，支持在主内容区阅读并复制完整配置。 | **Device status and history view** — Initial connection state is shown as an amber `Not Connected` badge; Backup History adds Full View to read and copy full configurations in the main content area. |
 | **会话安全** — 增加 15 分钟无操作登出、服务端会话失效、全 API 登录保护及敏感响应禁缓存；生产 HTTPS 可通过 `SESSION_COOKIE_SECURE=true` 启用 Secure Cookie。 | **Session security** — Adds 15-minute idle logout, server-side session invalidation, authentication for all APIs, and no-cache headers for sensitive responses; enable Secure cookies for HTTPS with `SESSION_COOKIE_SECURE=true`. |
 | **Oxidized 历史与 Compare 修复** — 版本历史和配置通过组仓库中的 Git commit SHA 读取；手动备份等待新 commit 或完成时间更新；Compare 的空、Unix 和 ISO epoch 参数统一规范化。配置阅读器只在文本框内显示细滚动条。 | **Oxidized history and Compare fixes** — Version history and configs are read from the group repository by exact Git commit SHA; manual backups wait for a new commit or completion-time update; Compare normalizes empty, Unix, and ISO epoch parameters. Config readers show a thin scrollbar only inside the text area. |
+| **Activity Log、Compare 与设备面板** — 修改行独立统计并用琥珀色标记；Compare 统计徽章可循环跳转到两侧对应变更行；右侧设备操作整合为单开折叠面板，Activity Log 与设备面板互斥显示。 | **Activity Log, Compare, and device panel** — Modified lines are counted and highlighted separately; Compare badges cycle through matching changed rows in both panes; device actions use a single-open accordion, replacing the Activity Log while active. |
 
 ---
 

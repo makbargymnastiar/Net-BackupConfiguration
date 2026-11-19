@@ -637,6 +637,186 @@ body {
 .right-panel.right-panel-compact-action .right-panel-activity {
   flex: 1 1 0;
 }
+.right-panel.right-panel-device-active .right-panel-action {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-bottom: 0;
+}
+.right-panel.right-panel-device-active .right-panel-activity {
+  display: none;
+}
+.right-panel-device-active .right-panel-section-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px;
+}
+.right-panel.right-panel-device-active .right-panel-section-header {
+  align-items: flex-start;
+}
+.device-panel-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+.device-panel-heading strong {
+  overflow-wrap: anywhere;
+}
+.device-panel-heading > span:not(.status-text) {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.device-panel-heading .status-text {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+.device-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+}
+.device-accordion-item {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  flex: 0 0 auto;
+  min-height: 0;
+}
+.device-accordion-item.open {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.device-accordion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.device-accordion-header:hover {
+  background: #eaf1fb;
+}
+.device-accordion-header .chevron {
+  width: 15px;
+  height: 15px;
+  transition: transform 160ms ease;
+}
+.device-accordion-item.open .device-accordion-header .chevron {
+  transform: rotate(180deg);
+}
+.device-accordion-content {
+  padding: 12px;
+  max-height: 1000px;
+  opacity: 1;
+  transition: max-height 160ms ease, opacity 140ms ease, padding 160ms ease;
+}
+.device-accordion-item.open .device-accordion-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.device-accordion-content.closing {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+#device-accordion-load-config {
+  overflow: hidden;
+}
+#device-accordion-load-config .action-panel-slot,
+#device-accordion-load-config #viewConfigModalContent {
+  height: 100%;
+  min-height: 0;
+}
+#device-accordion-load-config #viewConfigModalContent {
+  display: flex;
+  flex-direction: column;
+}
+#device-accordion-load-config #viewConfigModalContent .scroll-400 {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+}
+#device-accordion-load-config #viewConfigContent {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  resize: none;
+  overflow-y: auto;
+}
+#device-accordion-load-config #btn-close-config {
+  display: none;
+}
+.device-accordion-content[hidden] {
+  display: none;
+}
+.device-accordion-footer {
+  margin-top: auto;
+  padding-top: 12px;
+}
+.btn-danger-outline {
+  width: 100%;
+  color: var(--danger-fg);
+  border: 1px solid #fca5a5;
+  background: #fff;
+}
+.btn-danger-outline:hover {
+  background: var(--danger-light);
+  border-color: var(--danger);
+}
+.right-panel-device-active .action-panel-slot,
+.right-panel-device-active .action-panel-slot > #editModalContent,
+.right-panel-device-active .action-panel-slot > #scheduleOverrideModalContent,
+.right-panel-device-active .action-panel-slot > #viewConfigModalContent {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  box-shadow: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.right-panel-device-active #viewConfigModalContent .scroll-400 {
+  max-height: min(42vh, 360px);
+}
+.right-panel-device-active #viewConfigContent {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
+}
+.right-panel-device-active #viewConfigContent::-webkit-scrollbar {
+  width: 6px;
+}
+.right-panel-device-active #viewConfigContent::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #94a3b8;
+}
+.right-panel-device-active .history-detail-config {
+  resize: vertical;
+}
+.device-row-active td {
+  background: #eff6ff !important;
+}
+.device-row-active td:first-child {
+  box-shadow: inset 3px 0 0 var(--primary-light);
+}
 .right-panel-action-hidden {
   display: none;
 }
@@ -909,10 +1089,119 @@ body {
 /* ============ Activity Log (Right Panel, bottom): backup results only ============ */
 .activity-log-item {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
+  flex-direction: column;
   padding: var(--space-3) 0;
   border-bottom: 1px solid var(--border-color);
+}
+
+.diff-stat {
+    display: inline-flex;
+    align-items: center;
+    border: 0;
+    border-radius: 999px;
+    padding: 2px 7px;
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+button.diff-stat {
+    cursor: pointer;
+    transition: filter 120ms ease, transform 120ms ease;
+}
+
+button.diff-stat:hover {
+    filter: brightness(.94);
+    transform: translateY(-1px);
+}
+
+.diff-stat-same {
+    color: #475569;
+    background: #e2e8f0;
+}
+
+.diff-stat-added {
+    color: #166534;
+    background: #dcfce7;
+}
+
+.diff-stat-removed {
+    color: #991b1b;
+    background: #fee2e2;
+}
+
+.diff-stat-modified {
+    color: #854d0e;
+    background: #fef3c7;
+}
+
+.diff-line-row {
+    display: flex;
+    width: max-content;
+    min-width: 100%;
+    min-height: 22px;
+    scroll-margin: 45%;
+}
+
+.diff-line-number {
+    box-sizing: border-box;
+    width: 50px;
+    flex: 0 0 50px;
+    padding: 0 8px;
+    color: #888;
+    text-align: right;
+    user-select: none;
+    border-right: 1px solid #ddd;
+}
+
+.diff-line-cell {
+    flex: 1 0 auto;
+    min-width: 0;
+    padding: 0 8px;
+    white-space: pre;
+}
+
+.diff-cell-same {
+    background: #e8e8e8;
+}
+
+.diff-cell-added {
+    background: #c8e6c9;
+}
+
+.diff-cell-removed {
+    background: #ffcdd2;
+}
+
+.diff-cell-modified {
+    background: #fff1b8;
+}
+
+.diff-spacer {
+    background: #f1f3f5;
+}
+
+.diff-jump-highlight .diff-line-cell {
+    outline: 2px solid #2563eb;
+    outline-offset: -2px;
+    animation: diff-jump-pulse 1.4s ease-out;
+}
+
+.diff-empty {
+    padding: 20px;
+    color: #666;
+}
+
+@keyframes diff-jump-pulse {
+    0% { background-color: #bfdbfe; }
+    100% { background-color: inherit; }
+}
+
+@media (max-width: 640px) {
+    .activity-log-diff {
+        align-items: flex-start;
+    }
 }
 .activity-log-item:last-child {
   border-bottom: none;
@@ -922,7 +1211,6 @@ body {
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-top: 5px;
 }
 .activity-log-dot-success {
   background: var(--success);
@@ -943,13 +1231,22 @@ body {
     opacity: 0.35;
   }
 }
-.activity-log-text {
-  min-width: 0;
+.activity-log-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 4px;
+}
+.activity-log-info {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  min-width: 0;
 }
 .activity-log-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 14px;
   font-weight: 700;
 }
@@ -975,13 +1272,21 @@ body {
 }
 /* +X / -Y backup difference badge, shown inline beside the hostname. */
 .activity-log-diff {
-  display: inline-block;
-  margin-left: 6px;
+  display: inline-flex;
+  justify-content: center;
   padding: 1px 6px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
   vertical-align: middle;
+  white-space: nowrap;
+}
+.activity-log-diff-column {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
 }
 .activity-log-diff-add {
   color: var(--success-fg, #047857);
@@ -994,6 +1299,10 @@ body {
 .activity-log-diff-none {
   color: var(--text-muted);
   background: var(--bg-app, #f1f5f9);
+}
+.activity-log-diff-change {
+  color: #92400e;
+  background: #fef3c7;
 }
 .activity-log-date {
   font-size: 12px;
@@ -3086,6 +3395,17 @@ textarea#cfg-yaml-editor {
     align-items: center;
     gap: 10px;
     border-bottom: 1px solid var(--border-color);
+}
+#diff-old-count,
+#diff-new-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 0;
+}
+.diff-pane-body .diff-line-row {
+    scroll-margin-block: 45%;
 }
 .diff-legend {
     margin-top: 12px;
