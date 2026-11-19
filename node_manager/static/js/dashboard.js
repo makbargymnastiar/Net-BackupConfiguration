@@ -552,6 +552,7 @@ function renderActionPanelPlaceholder() {
   const panelBody = document.getElementById("action-detail-panel");
   if (panelBody) {
     panelBody.classList.remove("panel-split-mode");
+    panelBody.classList.remove("panel-config-mode");
     panelBody.classList.remove("panel-diff-mode");
     panelBody.innerHTML = ACTION_DETAIL_PANEL_DEFAULT_HTML;
   }
@@ -639,6 +640,7 @@ function setActionPanelContext(deviceName, actionLabel) {
     );
 
   panelBody.classList.remove("panel-split-mode");
+  panelBody.classList.toggle("panel-config-mode", actionLabel === "Load Config");
   panelBody.innerHTML = "";
   const slot = document.createElement("div");
   slot.className = "action-panel-slot";

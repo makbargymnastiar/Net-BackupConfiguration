@@ -843,6 +843,40 @@ body {
 .action-panel-slot .modal-header h2 {
   font-size: 16px;
 }
+#action-detail-panel.panel-config-mode {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+#action-detail-panel.panel-config-mode .action-panel-slot {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+#action-detail-panel.panel-config-mode #viewConfigModalContent {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+#action-detail-panel.panel-config-mode .scroll-400 {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+}
+#action-detail-panel.panel-config-mode .config-textarea {
+  height: 100%;
+  min-height: 0;
+  resize: none;
+}
+#action-detail-panel.panel-config-mode .view-config-actions {
+  flex-shrink: 0;
+}
 
 .panel-confirm-delete {
   display: flex;
@@ -2259,8 +2293,8 @@ textarea#cfg-yaml-editor {
   background: var(--bg-card-hover);
   color: var(--text-primary);
   overflow: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
 }
 .history-detail-actions {
   display: flex;
@@ -2275,14 +2309,19 @@ textarea#cfg-yaml-editor {
   width: 100%;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
   padding: 24px;
   box-sizing: border-box;
+}
+.compare-view-container .full-view-shell {
+  flex: 1;
 }
 .full-view-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
+  flex-shrink: 0;
 }
 .full-view-eyebrow {
   margin: 0 0 6px;
@@ -2327,13 +2366,30 @@ textarea#cfg-yaml-editor {
   font-family: "SF Mono", "Fira Code", "JetBrains Mono", Consolas, monospace;
   font-size: 12px;
   line-height: 1.55;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
 }
 .full-view-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
+  flex-shrink: 0;
+}
+.full-view-config::-webkit-scrollbar,
+.history-detail-config::-webkit-scrollbar,
+.config-textarea::-webkit-scrollbar {
+  width: 6px;
+}
+.full-view-config::-webkit-scrollbar-thumb,
+.history-detail-config::-webkit-scrollbar-thumb,
+.config-textarea::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #94a3b8;
+}
+.full-view-config::-webkit-scrollbar-track,
+.history-detail-config::-webkit-scrollbar-track,
+.config-textarea::-webkit-scrollbar-track {
+  background: transparent;
 }
 @media (max-width: 640px) {
   .full-view-shell {
@@ -2838,19 +2894,16 @@ textarea#cfg-yaml-editor {
     margin-bottom: 15px;
 }
 .scroll-400 {
+    display: flex;
+    flex-direction: column;
+    height: 400px;
     max-height: 400px;
-    overflow-y: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-}
-.scroll-400::-webkit-scrollbar,
-.config-textarea::-webkit-scrollbar,
-.history-detail-config::-webkit-scrollbar,
-.full-view-config::-webkit-scrollbar {
-    display: none;
+    overflow: hidden;
 }
 .config-textarea {
+    flex: 1;
     height: 400px;
+    min-height: 0;
     width: 100%;
     font-family: "SF Mono", "Fira Code", "JetBrains Mono", Consolas, monospace;
     font-size: 12px;
@@ -2863,8 +2916,8 @@ textarea#cfg-yaml-editor {
     resize: vertical;
     outline: none;
     overflow: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+    scrollbar-width: thin;
+    scrollbar-color: #94a3b8 transparent;
 }
 .config-textarea:focus {
     border-color: var(--primary-light);

@@ -70,6 +70,25 @@ def _normalize_backup_time(value):
         return None
 
 
+def _normalize_epoch(value):
+    """Convert Unix or ISO timestamps to seconds; empty/invalid values are None."""
+    if value is None:
+        return None
+    value = str(value).strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return int(parsed.timestamp())
+        except (ValueError, OverflowError, OSError):
+            return None
+
+
 def _record_scheduled_backup_results(status_data):
     """Validate newly completed Oxidized runs and persist their final outcomes."""
     for node_name, payload in _status_entries(status_data):
@@ -277,24 +296,9 @@ def oxidized_node_version_by_oid(node_name):
               correct commit. Accepts both numeric strings and ISO date strings.
     """
     oid = request.args.get("oid")
-    epoch_raw = request.args.get("epoch")
+    epoch = _normalize_epoch(request.args.get("epoch"))
     if not oid:
         return jsonify({"error": "Missing required parameter: oid"}), 400
-
-    # Normalize epoch to Unix timestamp seconds (int)
-    epoch = None
-    if epoch_raw:
-        try:
-            # Try as numeric string first
-            epoch = int(epoch_raw)
-        except ValueError:
-            # Fallback: try parsing as ISO date string
-            try:
-                from datetime import datetime
-                dt = datetime.fromisoformat(epoch_raw.replace(" +0000", "+00:00"))
-                epoch = int(dt.timestamp())
-            except Exception:
-                pass
 
     config = get_oxidized_version_config(node_name, oid, epoch)
     if is_valid_oxidized_config(config):
@@ -330,8 +334,8 @@ def oxidized_node_diff(node_name):
     """Get diff between two versions - returns aligned line data for split-pane view."""
     oid1 = request.args.get("oid1")
     oid2 = request.args.get("oid2")
-    epoch1 = request.args.get("epoch1")
-    epoch2 = request.args.get("epoch2")
+    epoch1 = _normalize_epoch(request.args.get("epoch1"))
+    epoch2 = _normalize_epoch(request.args.get("epoch2"))
 
     if not oid1 or not oid2:
         return jsonify({"error": "Missing oid parameters"}), 400

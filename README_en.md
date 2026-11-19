@@ -9,6 +9,7 @@ Network device configuration backup management system, built on Oxidized, provid
 ### Unreleased
 
 - Backup results are validated against returned configuration; Backup History supports Full View; sessions expire after 15 minutes idle and protect all configuration APIs.
+- Backup History and Compare now read configs by exact Git commit from each group repository and wait for backup commits to complete; scrollbars are confined to the config text areas.
 
 ### v1.2.0 (2026-04-21) ⚠️ MAJOR UPGRADE
 

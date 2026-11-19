@@ -20,6 +20,7 @@
 | 中文 | English |
 |------|---------|
 | 备份结果现在依据有效配置验证；Backup History 支持 Full View；会话在 15 分钟无操作后失效，并保护所有配置 API。 | Backup results are validated against returned configuration; Backup History supports Full View; sessions expire after 15 minutes idle and protect all configuration APIs. |
+| Backup History 和 Compare 现按组仓库中的精确 Git commit 读取配置，并等待备份 commit 完成；配置滚动条仅显示在文本框内。 | Backup History and Compare now read configs by exact Git commit from each group repository and wait for backup commits to complete; scrollbars are confined to the config text areas. |
 
 ### v1.2.0 (2026-04-21) ⚠️ 重大升级 / ⚠️ MAJOR UPGRADE
 

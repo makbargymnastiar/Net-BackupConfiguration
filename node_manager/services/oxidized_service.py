@@ -4,6 +4,7 @@ Oxidized service - Oxidized API integration.
 
 import requests
 import os
+import time
 
 
 OXIDIZED_API_URL = os.getenv("OXIDIZED_API_URL", "http://oxidized:8888")
@@ -27,13 +28,13 @@ def _get_headers():
     return headers
 
 
-def get_oxidized_node_status(node_name):
+def get_oxidized_node_status(node_name, timeout=10):
     """Get single node Oxidized status."""
     try:
         response = requests.get(
             f"{OXIDIZED_API_URL}/node/{node_name}.json",
             headers=_get_headers(),
-            timeout=10
+            timeout=timeout
         )
         if response.status_code == 200:
             return response.json()
@@ -120,19 +121,174 @@ def _is_oxidized_error_message(message):
     return any(marker in content for marker in error_markers)
 
 
-def get_oxidized_version_history(node_name):
-    """Get node version history."""
-    try:
-        response = requests.get(
-            f"{OXIDIZED_API_URL}/node/version.json?node_full={node_name}",
-            headers=_get_headers(),
-            timeout=10
+def _get_oxidized_container():
+    """Return the configured Oxidized Docker container."""
+    import docker
+
+    return docker.from_env().containers.get(
+        os.getenv("OXIDIZED_CONTAINER_NAME", "oxidized")
+    )
+
+
+def _run_git(container, repo, args):
+    result = container.exec_run(
+        ["git", "-c", "safe.directory=*", "-C", repo] + args
+    )
+    output = result.output.decode("utf-8", errors="replace")
+    if result.exit_code != 0 and (
+        "safe.bareRepository" in output or "cannot use bare repository" in output
+    ):
+        result = container.exec_run(
+            [
+                "git",
+                "-c",
+                "safe.bareRepository=all",
+                "--git-dir",
+                repo,
+            ]
+            + args
         )
-        if response.status_code == 200:
-            return response.json()
-        return []
+        output = result.output.decode("utf-8", errors="replace")
+    return result.exit_code, output
+
+
+def _node_group_name(node_name):
+    from models.group import Group
+    from models.node import Node
+
+    node = Node.get_by_name(node_name)
+    if not node or not node.group_id:
+        return None
+    group = Group.get_by_id(node.group_id)
+    return group.name if group else None
+
+
+def _get_git_repositories(container, node_name):
+    """Discover the node's group repository first, then other Git outputs."""
+    base_dir = "/home/oxidized/.config/oxidized"
+    configured_repo = _oxidized_git_base()
+    group_name = _node_group_name(node_name)
+    repositories = []
+
+    def add_repo(path):
+        if path and path not in repositories:
+            repositories.append(path)
+
+    if (
+        group_name
+        and group_name not in {".", ".."}
+        and os.path.basename(group_name) == group_name
+    ):
+        repo_roots = []
+        for root in (
+            os.path.dirname(configured_repo),
+            base_dir,
+            configured_repo,
+        ):
+            if root not in repo_roots:
+                repo_roots.append(root)
+        for root in repo_roots:
+            add_repo(os.path.join(root, f"{group_name}.git"))
+            add_repo(os.path.join(root, group_name))
+        add_repo(f"{configured_repo}-{group_name}")
+
+    add_repo(configured_repo)
+    add_repo(base_dir)
+
+    try:
+        found = container.exec_run(
+            [
+                "find",
+                base_dir,
+                "-maxdepth",
+                "5",
+                "-type",
+                "d",
+                "(",
+                "-name",
+                ".git",
+                "-o",
+                "-name",
+                "*.git",
+                ")",
+            ]
+        )
+        if found.exit_code == 0:
+            discovered = []
+            for line in found.output.decode("utf-8", errors="replace").splitlines():
+                path = line.strip()
+                if path.endswith("/.git"):
+                    path = path[: -len("/.git")]
+                if path.endswith(".git") or path in (base_dir, configured_repo):
+                    discovered.append(path)
+            if group_name:
+                discovered.sort(
+                    key=lambda path: (
+                        os.path.basename(path).lower() != f"{group_name}.git".lower(),
+                        path,
+                    )
+                )
+            for path in discovered:
+                add_repo(path)
     except Exception as e:
-        print(f"Error getting Oxidized version history for {node_name}: {e}")
+        print(f"WARN: Git repository discovery failed for {node_name}: {e}")
+
+    valid_repositories = []
+    for repo in repositories:
+        exit_code, _ = _run_git(container, repo, ["rev-parse", "--git-dir"])
+        if exit_code == 0:
+            valid_repositories.append(repo)
+    return valid_repositories
+
+
+def _node_paths_in_tree(container, repo, node_name, ref):
+    exit_code, tree = _run_git(
+        container, repo, ["ls-tree", "-r", "--name-only", ref]
+    )
+    if exit_code != 0:
+        return []
+    exact = []
+    nested = []
+    for path in tree.splitlines():
+        if path == node_name:
+            exact.append(path)
+        elif path.endswith("/" + node_name):
+            nested.append(path)
+    return exact + nested
+
+
+def _get_repository_for_node(container, node_name):
+    for repo in _get_git_repositories(container, node_name):
+        paths = _node_paths_in_tree(container, repo, node_name, "HEAD")
+        if paths:
+            return repo, paths[0]
+    return None, None
+
+
+def get_oxidized_version_history(node_name):
+    """Read commit history from the Git repository that stores this node."""
+    try:
+        container = _get_oxidized_container()
+        repo, node_path = _get_repository_for_node(container, node_name)
+        if not repo or not node_path:
+            return []
+
+        exit_code, listing = _run_git(
+            container,
+            repo,
+            ["log", "--follow", "--format=%H%x09%cI", "--", node_path],
+        )
+        if exit_code != 0:
+            return []
+
+        history = []
+        for line in listing.splitlines():
+            parts = line.split("\t", 1)
+            if len(parts) == 2 and parts[0]:
+                history.append({"oid": parts[0], "time": parts[1]})
+        return history
+    except Exception as e:
+        print(f"Error reading Git version history for {node_name}: {e}")
         return []
 
 
@@ -178,98 +334,54 @@ def get_oxidized_version_config(node_name, oid, epoch=None):
     bug). This restores multi-version browsing/compare regardless of how
     Oxidized has laid out its repos.
     """
-    import docker
-
     try:
-        client = docker.from_env()
-        container = client.containers.get("oxidized")
+        container = _get_oxidized_container()
     except Exception as e:
         print(f"ERROR: Docker unavailable for version config: {e}")
         return None
 
-    base_dir = "/home/oxidized/.config/oxidized"
+    repos = _get_git_repositories(container, node_name)
 
-    def git(repo, args):
-        result = container.exec_run(
-            ["git", "-c", "safe.directory=*", "-C", repo] + args
-        )
-        return result.exit_code, result.output.decode(
-            "utf-8", errors="replace"
-        )
-
-    # Candidate repos: the configured repo base + default + every directory
-    # that contains a .git (covers per-group repos). Discovery is best-effort.
-    repos = {base_dir, _oxidized_git_base()}
-    try:
-        found = container.exec_run(
-            ["find", base_dir, "-maxdepth", "4", "-type", "d", "-name", ".git"]
-        )
-        if found.exit_code == 0:
-            for line in found.output.decode("utf-8", errors="replace").splitlines():
-                line = line.strip()
-                if line.endswith("/.git"):
-                    repos.add(line[: -len("/.git")])
-    except Exception as e:
-        print(f"WARN: git repo discovery failed, using base paths only: {e}")
-
-    def node_paths_in_tree(repo, ref):
-        """Return file paths in the tree at 'ref' that belong to node_name,
-        preferring an exact root-level match over a group sub-directory one."""
-        ec, tree = git(repo, ["ls-tree", "-r", "--name-only", ref])
-        if ec != 0:
-            return []
-        exact, nested = [], []
-        for raw in tree.splitlines():
-            p = raw.strip()
-            if p == node_name:
-                exact.append(p)
-            elif p.endswith("/" + node_name):
-                nested.append(p)
-        return exact + nested
-
-    # 1) Direct oid lookup across every discovered repo.
+    # Resolve the exact SHA in each candidate repository, preferring the
+    # repository for this node's group over Oxidized's shared/default repo.
     for repo in repos:
-        for p in node_paths_in_tree(repo, oid):
-            ec, cfg = git(repo, ["show", f"{oid}:{p}"])
-            if ec == 0:
-                return cfg
-        # Flat-path fallback for repos without a resolvable ls-tree.
-        for p in (node_name, "/" + node_name):
-            ec, cfg = git(repo, ["show", f"{oid}:{p}"])
+        for path in _node_paths_in_tree(container, repo, node_name, oid):
+            ec, cfg = _run_git(container, repo, ["show", f"{oid}:{path}"])
             if ec == 0:
                 return cfg
 
-    # 2) Epoch-based fallback: newest commit touching this node at/before the
-    # timestamp, then read that exact file from the same repo.
-    if epoch:
+    # 2) Epoch fallback: find the latest commit at/before the timestamp.
+    if epoch is not None:
         try:
             epoch_int = int(epoch)
         except (TypeError, ValueError):
             epoch_int = None
         if epoch_int is not None:
-            from datetime import datetime, timezone
-
-            date_str = datetime.fromtimestamp(
-                epoch_int, tz=timezone.utc
-            ).strftime("%Y-%m-%d %H:%M:%S")
             for repo in repos:
-                ec, listing = git(
+                paths = _node_paths_in_tree(container, repo, node_name, "HEAD")
+                if not paths:
+                    continue
+                ec, listing = _run_git(
+                    container,
                     repo,
-                    ["log", "--until", date_str, "--format=%H", "--", node_name],
+                    [
+                        "log",
+                        f"--until=@{epoch_int}",
+                        "--format=%H",
+                        "--follow",
+                        "--",
+                        paths[0],
+                    ],
                 )
                 if ec == 0 and listing.strip():
                     commit_hash = listing.splitlines()[0].strip()
                     if not commit_hash:
                         continue
-                    for p in node_paths_in_tree(repo, commit_hash):
-                        ec2, cfg = git(
-                            repo, ["show", f"{commit_hash}:{p}"]
-                        )
-                        if ec2 == 0:
-                            return cfg
-                    for p in (node_name, "/" + node_name):
-                        ec2, cfg = git(
-                            repo, ["show", f"{commit_hash}:{p}"]
+                    for path in _node_paths_in_tree(
+                        container, repo, node_name, commit_hash
+                    ):
+                        ec2, cfg = _run_git(
+                            container, repo, ["show", f"{commit_hash}:{path}"]
                         )
                         if ec2 == 0:
                             return cfg
@@ -281,9 +393,29 @@ def get_oxidized_version_config(node_name, oid, epoch=None):
     return None
 
 
+def _backup_end_time(status):
+    if not isinstance(status, dict):
+        return None
+    stats = status.get("stats") or {}
+    last = stats.get("last") or {}
+    return last.get("end") if isinstance(last, dict) else None
+
+
+BACKUP_COMPLETION_POLL_ATTEMPTS = 12
+BACKUP_COMPLETION_POLL_INTERVAL_SECONDS = 0.5
+
+
 def trigger_oxidized_backup(node_name):
-    """Trigger backup and verify that Oxidized returns actual configuration."""
+    """Trigger backup and wait for Oxidized's Git commit or completion time."""
     try:
+        previous_history = get_oxidized_version_history(node_name)
+        previous_oid = (
+            previous_history[0].get("oid")
+            if previous_history and isinstance(previous_history[0], dict)
+            else None
+        )
+        previous_end = _backup_end_time(get_oxidized_node_status(node_name, timeout=2))
+
         response = requests.get(
             f"{OXIDIZED_API_URL}/node/next/{node_name}.json",
             headers=_get_headers(),
@@ -310,10 +442,31 @@ def trigger_oxidized_backup(node_name):
         elif isinstance(result, str) and _is_oxidized_error_message(result):
             return {"success": False, "error": "Oxidized backup failed"}
 
-        config = get_oxidized_config(node_name)
-        if not is_valid_oxidized_config(config):
-            return {"success": False, "error": "No valid configuration returned"}
-        return {"success": True}
+        for attempt in range(BACKUP_COMPLETION_POLL_ATTEMPTS):
+            history = get_oxidized_version_history(node_name)
+            current_oid = (
+                history[0].get("oid")
+                if history and isinstance(history[0], dict)
+                else None
+            )
+            current_end = _backup_end_time(
+                get_oxidized_node_status(node_name, timeout=2)
+            )
+            commit_updated = bool(current_oid and current_oid != previous_oid)
+            timestamp_updated = bool(current_end and current_end != previous_end)
+            if commit_updated or timestamp_updated:
+                config = get_oxidized_config(node_name)
+                if is_valid_oxidized_config(config):
+                    return {"success": True}
+                return {
+                    "success": False,
+                    "error": "Oxidized backup returned no valid configuration",
+                }
+
+            if attempt + 1 < BACKUP_COMPLETION_POLL_ATTEMPTS:
+                time.sleep(BACKUP_COMPLETION_POLL_INTERVAL_SECONDS)
+
+        return {"success": False, "error": "Oxidized backup did not complete"}
     except requests.RequestException:
         print(f"Error triggering Oxidized backup for {node_name}")
         return {"success": False, "error": "Backup request failed"}

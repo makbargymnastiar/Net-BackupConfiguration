@@ -39,10 +39,92 @@ def test_http_200_without_valid_config_is_not_a_success(monkeypatch):
         "get_oxidized_config",
         lambda _name: "Connection refused",
     )
+    monkeypatch.setattr(oxidized_service, "get_oxidized_version_history", lambda _name: [])
+    monkeypatch.setattr(
+        oxidized_service, "get_oxidized_node_status", lambda _name, **_kwargs: None
+    )
+    monkeypatch.setattr(oxidized_service, "BACKUP_COMPLETION_POLL_ATTEMPTS", 1)
 
     result = oxidized_service.trigger_oxidized_backup("edge-router")
 
     assert result["success"] is False
+
+
+def test_manual_backup_waits_for_new_git_commit(monkeypatch):
+    class OxidizedResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"name": "edge-router"}
+
+    history = iter(
+        [
+            [{"oid": "old-commit"}],
+            [{"oid": "old-commit"}],
+            [{"oid": "new-commit"}],
+        ]
+    )
+    monkeypatch.setattr(
+        oxidized_service.requests,
+        "get",
+        lambda *_args, **_kwargs: OxidizedResponse(),
+    )
+    monkeypatch.setattr(
+        oxidized_service, "get_oxidized_version_history", lambda _name: next(history)
+    )
+    monkeypatch.setattr(
+        oxidized_service, "get_oxidized_node_status", lambda _name, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        oxidized_service, "get_oxidized_config", lambda _name: "hostname edge-router\n"
+    )
+    monkeypatch.setattr(oxidized_service.time, "sleep", lambda *_args: None)
+    monkeypatch.setattr(oxidized_service, "BACKUP_COMPLETION_POLL_ATTEMPTS", 2)
+
+    result = oxidized_service.trigger_oxidized_backup("edge-router")
+
+    assert result == {"success": True}
+
+
+def test_manual_backup_accepts_updated_completion_time(monkeypatch):
+    class OxidizedResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"name": "edge-router"}
+
+    statuses = iter(
+        [
+            {"stats": {"last": {"end": "2026-01-01T00:00:00Z"}}},
+            {"stats": {"last": {"end": "2026-01-01T00:00:01Z"}}},
+        ]
+    )
+    monkeypatch.setattr(
+        oxidized_service.requests,
+        "get",
+        lambda *_args, **_kwargs: OxidizedResponse(),
+    )
+    monkeypatch.setattr(
+        oxidized_service,
+        "get_oxidized_version_history",
+        lambda _name: [{"oid": "same-commit"}],
+    )
+    monkeypatch.setattr(
+        oxidized_service,
+        "get_oxidized_node_status",
+        lambda _name, **_kwargs: next(statuses),
+    )
+    monkeypatch.setattr(
+        oxidized_service, "get_oxidized_config", lambda _name: "hostname edge-router\n"
+    )
+    monkeypatch.setattr(oxidized_service.time, "sleep", lambda *_args: None)
+    monkeypatch.setattr(oxidized_service, "BACKUP_COMPLETION_POLL_ATTEMPTS", 1)
+
+    result = oxidized_service.trigger_oxidized_backup("edge-router")
+
+    assert result == {"success": True}
 
 
 def test_manual_backup_failure_is_persisted(test_client_with_auth, monkeypatch):
@@ -139,3 +221,23 @@ def test_scheduled_backup_with_empty_config_is_logged_as_failed(
     assert response.json[0]["status"] == "failed"
     assert Node.get_by_name(node.name).last_status == "failed"
     assert "FAILED" in activity_log.read_text(encoding="utf-8")
+
+
+def test_diff_normalizes_empty_and_iso_epochs(test_client_with_auth, monkeypatch):
+    received_epochs = []
+
+    def get_version_config(_node_name, _oid, epoch=None):
+        received_epochs.append(epoch)
+        return "hostname edge-router\n"
+
+    monkeypatch.setattr(
+        "routes.oxidized_api.get_oxidized_version_config", get_version_config
+    )
+
+    response = test_client_with_auth.get(
+        "/api/oxidized/node/edge-router/diff"
+        "?oid1=first&oid2=second&epoch1=&epoch2=2026-01-02T03:04:05Z"
+    )
+
+    assert response.status_code == 200
+    assert received_epochs == [None, 1767323045]

@@ -11,6 +11,7 @@
 | **备份结果校验** — 手动和 Oxidized 定时备份只有在返回有效、非空配置时才标记为成功；失败结果会同步设备状态和 Activity Log。 | **Backup result validation** — Manual and Oxidized-scheduled backups are successful only when valid, non-empty configuration is returned; failures update device status and the Activity Log. |
 | **设备状态与历史视图** — 初始连接状态显示为琥珀色 `Not Connected`；Backup History 增加 Full View，支持在主内容区阅读并复制完整配置。 | **Device status and history view** — Initial connection state is shown as an amber `Not Connected` badge; Backup History adds Full View to read and copy full configurations in the main content area. |
 | **会话安全** — 增加 15 分钟无操作登出、服务端会话失效、全 API 登录保护及敏感响应禁缓存；生产 HTTPS 可通过 `SESSION_COOKIE_SECURE=true` 启用 Secure Cookie。 | **Session security** — Adds 15-minute idle logout, server-side session invalidation, authentication for all APIs, and no-cache headers for sensitive responses; enable Secure cookies for HTTPS with `SESSION_COOKIE_SECURE=true`. |
+| **Oxidized 历史与 Compare 修复** — 版本历史和配置通过组仓库中的 Git commit SHA 读取；手动备份等待新 commit 或完成时间更新；Compare 的空、Unix 和 ISO epoch 参数统一规范化。配置阅读器只在文本框内显示细滚动条。 | **Oxidized history and Compare fixes** — Version history and configs are read from the group repository by exact Git commit SHA; manual backups wait for a new commit or completion-time update; Compare normalizes empty, Unix, and ISO epoch parameters. Config readers show a thin scrollbar only inside the text area. |
 
 ---
 
