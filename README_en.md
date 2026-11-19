@@ -11,6 +11,7 @@ Network device configuration backup management system, built on Oxidized, provid
 - Backup results are validated against returned configuration; Backup History supports Full View; sessions expire after 15 minutes idle and protect all configuration APIs.
 - Backup History and Compare now read configs by exact Git commit from each group repository and wait for backup commits to complete; scrollbars are confined to the config text areas.
 - Activity Log counts modified lines separately; Compare badges cycle through changes; right-side device management uses a single-open accordion and replaces the Activity Log while active.
+- Manual backups wait for Oxidized's final completion time and status (up to 30 seconds); node edits validate the port, sync nodes.csv, and report reload results; device-panel accordions start collapsed.
 
 ### v1.2.0 (2026-04-21) ⚠️ MAJOR UPGRADE
 
@@ -76,6 +77,7 @@ Network device configuration backup management system, built on Oxidized, provid
 - **Model Management** - Support for 100+ network device models
 - **One-click Restart** - Restart Oxidized container via UI to load new configuration
 - **Validated Backup Results and History Full View** - Only valid configurations count as successful; read and copy complete historical configs in the main content area
+- **Oxidized Result Synchronization** - Manual backups wait for the final status; device edits validate ports and report config synchronization and service reload results
 - **Secure Sessions** - Automatic logout after 15 minutes idle, authenticated configuration APIs, and server-side session invalidation on logout
 
 ## System Architecture

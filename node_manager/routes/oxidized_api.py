@@ -211,8 +211,27 @@ def _record_scheduled_backup_results(status_data):
 
         if completed_at and completed_at != _normalize_backup_time(node.last_backup):
             config = get_oxidized_config(node_name)
+            has_explicit_failure = status_value in {
+                "failed",
+                "error",
+                "failure",
+                "no_connection",
+            } or any(
+                marker in status_value
+                for marker in (
+                    "authentication",
+                    "connection_error",
+                    "timeout",
+                    "refused",
+                    "failed",
+                )
+            )
             final_status = (
-                "SUCCESS" if is_valid_oxidized_config(config) else "FAILED"
+                "SUCCESS"
+                if is_valid_oxidized_config(config)
+                and status_value in {"success", "successful"}
+                and not has_explicit_failure
+                else "FAILED"
             )
             previous_backup = _normalize_backup_time(node.last_backup)
             previous_status = node.last_status
@@ -276,18 +295,35 @@ def _record_scheduled_backup_results(status_data):
                 "failed to connect",
             )
         )
-        has_failed_status = status_value in {"failed", "error", "failure"} or any(
+        has_failed_status = status_value in {
+            "failed",
+            "error",
+            "failure",
+            "no_connection",
+        } or any(
             marker in status_value
-            for marker in ("authentication_error", "connection_error", "timeout")
+            for marker in (
+                "authentication",
+                "connection_error",
+                "timeout",
+                "refused",
+                "failed",
+            )
+        )
+        is_initial_no_connection = (
+            status_value == "no_connection" and not node.last_backup
         )
         if (
-            has_failed_status or has_error_message
+            (has_failed_status and not is_initial_no_connection) or has_error_message
         ) and node.last_status != "failed":
             node.last_status = "failed"
             node.save()
             activity_log_service.append_entry(
                 node_name, node.ip, "FAILED"
             )
+        elif is_initial_no_connection:
+            node.last_status = "no_connection"
+            node.save()
         elif status_value in {"success", "successful"} and node.last_status != "success":
             config = get_oxidized_config(node_name)
             node.last_status = (
@@ -299,7 +335,7 @@ def _record_scheduled_backup_results(status_data):
                 node.ip,
                 "SUCCESS" if node.last_status == "success" else "FAILED",
             )
-        elif not node.last_backup and status_value in {"", "pending", "no_connection"}:
+        elif not node.last_backup and status_value in {"", "pending"}:
             node.last_status = "no_connection"
             node.save()
 
@@ -429,15 +465,48 @@ def oxidized_node_backup(node_name):
     result = trigger_oxidized_backup(node_name)
     if not result.get("success"):
         node.last_status = "failed"
+        failed_at = result.get("last_backup") or datetime.now(
+            timezone.utc
+        ).isoformat(timespec="seconds")
+        if result.get("last_backup"):
+            node.last_backup = result["last_backup"]
         node.save()
-        return jsonify({"success": False, "error": "Backup failed"}), 500
-
-    from datetime import datetime, timezone
+        activity_entry = activity_log_service.append_entry(
+            node_name, node.ip, "FAILED", timestamp=failed_at
+        )
+        return jsonify(
+            {
+                "success": False,
+                "status": "failed",
+                "last_backup": node.last_backup,
+                "activity_entry": activity_entry,
+                "error": result.get("error") or "Backup failed",
+            }
+        ), 500
 
     node.last_status = "success"
-    node.last_backup = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    node.last_backup = result.get("last_backup") or datetime.now(
+        timezone.utc
+    ).isoformat(timespec="seconds")
     node.save()
-    return jsonify({"success": True})
+    diff_stats = _latest_backup_diff_stats(node_name)
+    activity_entry = activity_log_service.append_entry(
+        node_name,
+        node.ip,
+        "SUCCESS",
+        insert=diff_stats.get("added"),
+        delete=diff_stats.get("removed"),
+        changed=diff_stats.get("changed"),
+        timestamp=node.last_backup,
+    )
+    return jsonify(
+        {
+            "success": True,
+            "status": node.last_status,
+            "last_backup": node.last_backup,
+            "activity_entry": activity_entry,
+        }
+    )
 
 
 @oxidized_api_bp.route(

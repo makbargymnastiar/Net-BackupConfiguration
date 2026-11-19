@@ -5,6 +5,8 @@ Oxidized service - Oxidized API integration.
 import requests
 import os
 import time
+from datetime import datetime, timezone
+from urllib.parse import quote
 
 
 OXIDIZED_API_URL = os.getenv("OXIDIZED_API_URL", "http://oxidized:8888")
@@ -32,7 +34,7 @@ def get_oxidized_node_status(node_name, timeout=10):
     """Get single node Oxidized status."""
     try:
         response = requests.get(
-            f"{OXIDIZED_API_URL}/node/{node_name}.json",
+            f"{OXIDIZED_API_URL}/node/show/{quote(str(node_name), safe='')}.json",
             headers=_get_headers(),
             timeout=timeout
         )
@@ -397,27 +399,64 @@ def _backup_end_time(status):
     if not isinstance(status, dict):
         return None
     stats = status.get("stats") or {}
-    last = stats.get("last") or {}
+    last = stats.get("last") or status.get("last") or {}
     return last.get("end") if isinstance(last, dict) else None
 
 
-BACKUP_COMPLETION_POLL_ATTEMPTS = 12
-BACKUP_COMPLETION_POLL_INTERVAL_SECONDS = 0.5
+def _backup_last_status(status):
+    if not isinstance(status, dict):
+        return ""
+    stats = status.get("stats") or {}
+    last = stats.get("last") or status.get("last") or {}
+    value = (
+        last.get("status")
+        if isinstance(last, dict)
+        else None
+    ) or stats.get("status") or status.get("status")
+    return str(value or "").strip().lower()
+
+
+def _is_backup_failure_status(status):
+    status = str(status or "").strip().lower()
+    return any(
+        marker in status
+        for marker in ("fail", "error", "no_connection", "timeout", "refused", "auth")
+    )
+
+
+def _parse_backup_time(value):
+    if isinstance(value, dict):
+        value = value.get("end")
+    if value is None or value == "":
+        return None
+    try:
+        if isinstance(value, (int, float)):
+            parsed = datetime.fromtimestamp(value, tz=timezone.utc)
+        else:
+            raw = str(value).strip()
+            try:
+                parsed = datetime.fromtimestamp(float(raw), tz=timezone.utc)
+            except ValueError:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+BACKUP_COMPLETION_POLL_ATTEMPTS = 30
+BACKUP_COMPLETION_POLL_INTERVAL_SECONDS = 1
 
 
 def trigger_oxidized_backup(node_name):
-    """Trigger backup and wait for Oxidized's Git commit or completion time."""
+    """Trigger backup and wait for Oxidized to publish its final node status."""
     try:
-        previous_history = get_oxidized_version_history(node_name)
-        previous_oid = (
-            previous_history[0].get("oid")
-            if previous_history and isinstance(previous_history[0], dict)
-            else None
-        )
-        previous_end = _backup_end_time(get_oxidized_node_status(node_name, timeout=2))
+        previous_status = get_oxidized_node_status(node_name, timeout=5)
+        previous_end = _parse_backup_time(_backup_end_time(previous_status))
 
         response = requests.get(
-            f"{OXIDIZED_API_URL}/node/next/{node_name}.json",
+            f"{OXIDIZED_API_URL}/node/next/{quote(str(node_name), safe='')}.json",
             headers=_get_headers(),
             timeout=30
         )
@@ -426,7 +465,9 @@ def trigger_oxidized_backup(node_name):
         try:
             result = response.json()
         except ValueError:
-            return {"success": False, "error": "Oxidized returned an invalid response"}
+            # Some Oxidized versions return an empty/text acknowledgment while
+            # the fetch job continues asynchronously.
+            result = {}
 
         if isinstance(result, dict):
             if result.get("error") or result.get("exception"):
@@ -438,35 +479,93 @@ def trigger_oxidized_backup(node_name):
                 return {"success": False, "error": "Oxidized backup failed"}
             status = str(result.get("status", "")).lower()
             if status in {"failed", "error", "no_connection"}:
-                return {"success": False, "error": "Oxidized backup failed"}
-        elif isinstance(result, str) and _is_oxidized_error_message(result):
-            return {"success": False, "error": "Oxidized backup failed"}
-
-        for attempt in range(BACKUP_COMPLETION_POLL_ATTEMPTS):
-            history = get_oxidized_version_history(node_name)
-            current_oid = (
-                history[0].get("oid")
-                if history and isinstance(history[0], dict)
-                else None
-            )
-            current_end = _backup_end_time(
-                get_oxidized_node_status(node_name, timeout=2)
-            )
-            commit_updated = bool(current_oid and current_oid != previous_oid)
-            timestamp_updated = bool(current_end and current_end != previous_end)
-            if commit_updated or timestamp_updated:
-                config = get_oxidized_config(node_name)
-                if is_valid_oxidized_config(config):
-                    return {"success": True}
                 return {
                     "success": False,
+                    "status": "failed",
+                    "error": f"Oxidized backup failed: {status}",
+                }
+        elif isinstance(result, str) and _is_oxidized_error_message(result):
+            return {
+                "success": False,
+                "status": "failed",
+                "error": "Oxidized backup failed",
+            }
+
+        deadline = time.monotonic() + (
+            BACKUP_COMPLETION_POLL_ATTEMPTS
+            * BACKUP_COMPLETION_POLL_INTERVAL_SECONDS
+        )
+        attempt = 0
+        previous_last_status = _backup_last_status(previous_status)
+        while attempt < BACKUP_COMPLETION_POLL_ATTEMPTS and time.monotonic() < deadline:
+            remaining = max(0.1, deadline - time.monotonic())
+            current_status = get_oxidized_node_status(
+                node_name, timeout=min(5, remaining)
+            )
+            current_end = _parse_backup_time(_backup_end_time(current_status))
+            last_status = _backup_last_status(current_status)
+            if (
+                _is_backup_failure_status(last_status)
+                and last_status != previous_last_status
+            ):
+                completed_end = (
+                    current_end
+                    if current_end
+                    and (previous_end is None or current_end > previous_end)
+                    else None
+                )
+                return {
+                    "success": False,
+                    "status": "failed",
+                    "last_backup": (
+                        completed_end.isoformat(timespec="seconds")
+                        if completed_end
+                        else None
+                    ),
+                    "error": f"Oxidized backup finished with status: {last_status}",
+                }
+            if current_end and (previous_end is None or current_end > previous_end):
+                if _is_backup_failure_status(last_status):
+                    return {
+                        "success": False,
+                        "status": "failed",
+                        "last_backup": current_end.isoformat(timespec="seconds"),
+                        "error": f"Oxidized backup finished with status: {last_status}",
+                    }
+                if last_status not in {"success", "successful"}:
+                    return {
+                        "success": False,
+                        "status": "failed",
+                        "last_backup": current_end.isoformat(timespec="seconds"),
+                        "error": (
+                            "Oxidized backup returned no successful final status"
+                        ),
+                    }
+                config = get_oxidized_config(node_name)
+                if is_valid_oxidized_config(config):
+                    return {
+                        "success": True,
+                        "status": "success",
+                        "last_backup": current_end.isoformat(timespec="seconds"),
+                    }
+                return {
+                    "success": False,
+                    "status": "failed",
+                    "last_backup": current_end.isoformat(timespec="seconds"),
                     "error": "Oxidized backup returned no valid configuration",
                 }
 
-            if attempt + 1 < BACKUP_COMPLETION_POLL_ATTEMPTS:
-                time.sleep(BACKUP_COMPLETION_POLL_INTERVAL_SECONDS)
+            attempt += 1
+            if attempt < BACKUP_COMPLETION_POLL_ATTEMPTS:
+                time.sleep(
+                    min(BACKUP_COMPLETION_POLL_INTERVAL_SECONDS, max(0, deadline - time.monotonic()))
+                )
 
-        return {"success": False, "error": "Oxidized backup did not complete"}
+        return {
+            "success": False,
+            "status": "failed",
+            "error": "Oxidized backup did not complete within 30 seconds",
+        }
     except requests.RequestException:
         print(f"Error triggering Oxidized backup for {node_name}")
         return {"success": False, "error": "Backup request failed"}

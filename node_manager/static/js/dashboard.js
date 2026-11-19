@@ -552,6 +552,7 @@ function renderDevicePanelHeader(deviceName) {
   title.innerHTML =
     `<span class="device-panel-heading"><strong>${escapeHtml(deviceName)}</strong>` +
     `<span>${escapeHtml(node.ip || "-")}</span>` +
+    `<span>${escapeHtml((node.protocol || "ssh").toUpperCase())} · Port ${escapeHtml(node.port || "-")}</span>` +
     `<span class="status-text ${statusClass}"><span class="status-dot"></span>${statusText}</span></span>`;
 }
 
@@ -567,7 +568,7 @@ function openDeviceManagerPanel(deviceName) {
 
   currentPanelDevice = deviceName;
   deviceAccordionActive = true;
-  activeDeviceAccordionSection = "load-config";
+  activeDeviceAccordionSection = null;
   const panel = document.querySelector(".right-panel");
   if (panel) {
     panel.classList.add("right-panel-device-active");
@@ -589,22 +590,34 @@ function openDeviceManagerPanel(deviceName) {
       ]
         .map(
           ([key, label]) => `
-            <section class="device-accordion-item ${key === activeDeviceAccordionSection ? "open" : ""}" data-device-section="${key}">
+            <section class="device-accordion-item" data-device-section="${key}">
               <button type="button" class="device-accordion-header" onclick="toggleDeviceAccordion('${key}')">
-                <span>${label}</span>
+                <span class="device-accordion-label">${getDeviceAccordionIcon(key)}<span>${label}</span></span>
                 <svg class="icon chevron" viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
               </button>
-              <div class="device-accordion-content" id="device-accordion-${key}" ${key === activeDeviceAccordionSection ? "" : "hidden"}></div>
+              <div class="device-accordion-content" id="device-accordion-${key}" hidden></div>
             </section>`,
         )
         .join("")}
       <footer class="device-accordion-footer">
-        <button type="button" class="btn btn-danger-outline" onclick="deleteNode('${escapeHtml(deviceName)}')">Delete Node</button>
+        <button type="button" class="btn btn-danger-outline" onclick="deleteNode('${escapeHtml(deviceName)}')">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6"/></svg>
+          <span>Delete Node</span>
+        </button>
       </footer>
     </div>
   `;
   renderDevices();
-  viewConfig(deviceName);
+}
+
+function getDeviceAccordionIcon(section) {
+  const paths = {
+    "load-config": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/>',
+    "backup-history": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    "schedule-backup": '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
+    "edit-node": '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/>',
+  };
+  return `<svg class="icon device-accordion-icon" viewBox="0 0 24 24" aria-hidden="true">${paths[section] || ""}</svg>`;
 }
 
 function manageDevicePanel(deviceName) {
@@ -931,13 +944,21 @@ function computeBackupDiff(hostname) {
 
 // Finalizes a pending row: resolves its diff, persists one line to the server,
 // then swaps the pending row for the confirmed server row (in place).
-function updateActivityLogEntry(id, status, timestampMs) {
+function updateActivityLogEntry(id, status, timestampMs, savedEntry) {
   const pend = activityLogPending.find((e) => e.id === id);
   if (!pend) return;
   const hostname = pend.hostname;
   const ip = pend.ip || getNodeIp(hostname);
   const ts = timestampMs || Date.now();
   const finalStatus = status === "success" ? "SUCCESS" : "FAILED";
+
+  if (savedEntry) {
+    const idx = activityLogPending.findIndex((e) => e.id === id);
+    if (idx !== -1) activityLogPending.splice(idx, 1);
+    activityLogServerEntries.unshift(savedEntry);
+    renderActivityLog();
+    return;
+  }
 
   const persist = (diff) => {
     const isoTs = new Date(ts).toISOString();
@@ -3153,32 +3174,59 @@ function doTriggerBackup(nodeName) {
   }, 400);
 
   fetch(`/api/oxidized/node/${nodeName}/backup`, { method: "POST" })
-    .then((r) => r.json())
-    .then((data) => {
+    .then(async (r) => {
+      const data = await r.json();
+      return { response: r, data };
+    })
+    .then(({ response, data }) => {
       const now = Date.now();
-      if (data.success) {
+      if (response.ok && data.success && data.status !== "failed") {
         // Only a successful backup updates Latest Backup.
         oxidizedStatus[nodeName] = Object.assign(
           {},
           oxidizedStatus[nodeName],
-          { status: "success", last: { end: new Date(now).toISOString() } },
+          {
+            status: data.status || "success",
+            last: {
+              end: data.last_backup || new Date(now).toISOString(),
+              status: data.status || "success",
+            },
+          },
         );
         setTriggerStatus(nodeName, null);
-        updateActivityLogEntry(logId, "success", now);
+        updateActivityLogEntry(
+          logId,
+          "success",
+          Date.parse(data.last_backup) || now,
+          data.activity_entry,
+        );
         showInfoToast(`Backup completed (${nodeName})`);
       } else {
         oxidizedStatus[nodeName] = Object.assign(
           {},
           oxidizedStatus[nodeName],
-          { status: "failed" },
+          {
+            status: data.status || "failed",
+            last: data.last_backup
+              ? { end: data.last_backup, status: data.status || "failed" }
+              : (oxidizedStatus[nodeName] || {}).last,
+          },
         );
         setTriggerStatus(nodeName, null);
-        updateActivityLogEntry(logId, "failed", now);
-        showInfoToast(`Backup failed (${nodeName})`, true);
+        updateActivityLogEntry(
+          logId,
+          "failed",
+          Date.parse(data.last_backup) || now,
+          data.activity_entry,
+        );
+        showInfoToast(
+          data.error || `Backup failed (${nodeName})`,
+          true,
+        );
       }
       refreshNodeDisplays();
     })
-    .catch(() => {
+    .catch((error) => {
       oxidizedStatus[nodeName] = Object.assign(
         {},
         oxidizedStatus[nodeName],
@@ -3187,16 +3235,21 @@ function doTriggerBackup(nodeName) {
       setTriggerStatus(nodeName, null);
       updateActivityLogEntry(logId, "failed", Date.now());
       refreshNodeDisplays();
-      showInfoToast(`Backup failed (${nodeName})`, true);
+      showInfoToast(
+        error && error.message
+          ? `Backup failed (${nodeName}): ${error.message}`
+          : `Backup failed (${nodeName})`,
+        true,
+      );
     });
 }
 
 // ============ Node CRUD ============
 function openEditModal(name) {
   Promise.all([
-    fetch("/api/credentials").then((r) => r.json()),
-    fetch("/api/models").then((r) => r.json()),
-    fetch("/api/groups").then((r) => r.json()),
+    fetch("/api/credentials").then((r) => readApiResponse(r)),
+    fetch("/api/models").then((r) => readApiResponse(r)),
+    fetch("/api/groups").then((r) => readApiResponse(r)),
   ])
     .then(([creds, models, groupsData]) => {
       allCredentials = creds;
@@ -3233,9 +3286,10 @@ function openEditModal(name) {
         groupSelect.appendChild(opt);
       });
 
-      return fetch(`/api/nodes/${name}`);
+      return fetch(`/api/nodes/${encodeURIComponent(name)}`).then((r) =>
+        readApiResponse(r),
+      );
     })
-    .then((r) => r.json())
     .then((node) => {
       document.getElementById("editNodeName").value = node.name;
       document.getElementById("editNodeIp").value = node.ip;
@@ -3247,6 +3301,26 @@ function openEditModal(name) {
       document.getElementById("editNodePassword").value = node.password || "";
       document.getElementById("editNodeGroup").value = node.group_id || "";
       revealModalInActionPanel("editModal", name, "Edit Node");
+    })
+    .catch((error) => {
+      showInfoToast(
+        error && error.message
+          ? `Unable to open Edit Node: ${error.message}`
+          : "Unable to open Edit Node",
+        true,
+      );
+    });
+}
+
+function readApiResponse(response) {
+  return response
+    .json()
+    .catch(() => ({}))
+    .then((data) => {
+      if (!response.ok || data.success === false) {
+        throw new Error(data.error || `Request failed (${response.status})`);
+      }
+      return data;
     });
 }
 
@@ -3257,6 +3331,10 @@ function closeEditModal() {
 
 function updateNode(e) {
   e.preventDefault();
+  const form = e.currentTarget || e.target;
+  if (form && typeof form.reportValidity === "function" && !form.reportValidity()) {
+    return;
+  }
   const nodeName = document.getElementById("editNodeName").value;
   const groupId = document.getElementById("editNodeGroup").value;
   if (!groupId) {
@@ -3271,26 +3349,56 @@ function updateNode(e) {
     ip: document.getElementById("editNodeIp").value,
     model: document.getElementById("editNodeModel").value,
     protocol: document.getElementById("editNodeProtocol").value,
-    port: document.getElementById("editNodePort").value,
+    port: parseInt(document.getElementById("editNodePort").value, 10),
     username: document.getElementById("editNodeUsername").value,
     password: document.getElementById("editNodePassword").value,
-    group_id: groupId ? parseInt(groupId) : null,
+    group_id: groupId ? parseInt(groupId, 10) : null,
   };
-  fetch(`/api/nodes/${nodeName}`, {
+  if (!Number.isInteger(node.port) || node.port < 1 || node.port > 65535) {
+    showInfoToast("Port must be a number between 1 and 65535", true);
+    return;
+  }
+  fetch(`/api/nodes/${encodeURIComponent(nodeName)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(node),
   })
-    .then((r) => r.json())
+    .then((r) => readApiResponse(r))
     .then((data) => {
-      if (data.success) {
-        showInfoToast(`Device updated (${nodeName})`);
-        closeEditModal();
-        refreshNodes();
-        logActivityEvent(nodeName, "Node Updated Successfully");
-      } else {
-        showInfoToast(data.error || "Failed to update device", true);
+      const savedNode = data.node || node;
+      const group = (allGroups || []).find(
+        (item) => String(item.id) === String(savedNode.group_id),
+      );
+      const localNode = Object.assign(
+        {},
+        (allNodes || []).find((item) => item.name === nodeName) || {},
+        savedNode,
+        { group_name: savedNode.group_name || (group && group.name) || "" },
+      );
+      const index = (allNodes || []).findIndex((item) => item.name === nodeName);
+      if (index >= 0) allNodes[index] = localNode;
+      else allNodes.push(localNode);
+      renderDevices();
+      if (deviceAccordionActive && currentPanelDevice === nodeName) {
+        renderDevicePanelHeader(nodeName);
       }
+      closeEditModal();
+      showInfoToast(
+        data.oxidized_reloaded === false
+          ? "Device changes saved, but Oxidized could not be reloaded."
+          : "Perubahan perangkat berhasil disimpan",
+        data.oxidized_reloaded === false,
+      );
+      refreshNodes();
+      logActivityEvent(nodeName, "Node Updated Successfully");
+    })
+    .catch((error) => {
+      showInfoToast(
+        error && error.message
+          ? `Gagal menyimpan perubahan perangkat: ${error.message}`
+          : "Gagal menyimpan perubahan perangkat",
+        true,
+      );
     });
 }
 

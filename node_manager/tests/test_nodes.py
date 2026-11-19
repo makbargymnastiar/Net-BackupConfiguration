@@ -122,6 +122,68 @@ class TestNodeCRUD:
         data = json.loads(response.data)
         assert data["ip"] == "2.2.2.2"
 
+    def test_update_node_syncs_csv_and_reloads_oxidized(
+        self, test_client_with_auth, clean_db, monkeypatch
+    ):
+        from models.node import Node
+        from routes import nodes as nodes_routes
+
+        Node(
+            name="sync-router",
+            ip="192.0.2.10",
+            model="ios",
+            protocol="ssh",
+            port=22,
+            username="admin",
+            password="secret",
+        ).save()
+        written_nodes = []
+        monkeypatch.setattr(
+            nodes_routes,
+            "write_nodes_csv",
+            lambda nodes: written_nodes.extend(nodes),
+        )
+        monkeypatch.setattr(nodes_routes, "reload_oxidized_nodes", lambda: True)
+
+        response = test_client_with_auth.put(
+            "/api/nodes/sync-router",
+            json={
+                "ip": "192.0.2.20",
+                "model": "IOSXE",
+                "protocol": "telnet",
+                "port": 2323,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json["success"] is True
+        assert response.json["oxidized_reloaded"] is True
+        assert response.json["node"]["ip"] == "192.0.2.20"
+        assert response.json["node"]["protocol"] == "telnet"
+        assert response.json["node"]["port"] == 2323
+        assert written_nodes[0]["ip"] == "192.0.2.20"
+
+    def test_update_node_rejects_out_of_range_port(
+        self, test_client_with_auth, clean_db
+    ):
+        from models.node import Node
+
+        Node(
+            name="invalid-port-router",
+            ip="192.0.2.10",
+            model="ios",
+            username="admin",
+            password="secret",
+        ).save()
+
+        response = test_client_with_auth.put(
+            "/api/nodes/invalid-port-router", json={"port": 70000}
+        )
+
+        assert response.status_code == 400
+        assert response.json["success"] is False
+        assert Node.get_by_name("invalid-port-router").port == 22
+
     def test_delete_node(self, client, test_client_with_auth, clean_db):
         """Test deleting a node."""
         # Create a node

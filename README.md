@@ -22,6 +22,7 @@
 | 备份结果现在依据有效配置验证；Backup History 支持 Full View；会话在 15 分钟无操作后失效，并保护所有配置 API。 | Backup results are validated against returned configuration; Backup History supports Full View; sessions expire after 15 minutes idle and protect all configuration APIs. |
 | Backup History 和 Compare 现按组仓库中的精确 Git commit 读取配置，并等待备份 commit 完成；配置滚动条仅显示在文本框内。 | Backup History and Compare now read configs by exact Git commit from each group repository and wait for backup commits to complete; scrollbars are confined to the config text areas. |
 | Activity Log 单独统计修改行；Compare 徽章可循环跳转到变更；右侧设备管理采用单开折叠面板，并与 Activity Log 互斥显示。 | Activity Log counts modified lines separately; Compare badges cycle through changes; right-side device management uses a single-open accordion and replaces the Activity Log while active. |
+| 手动备份等待 Oxidized 最终完成时间和状态（最多 30 秒）；编辑节点会验证端口、同步 nodes.csv 并反馈 reload 结果；设备管理面板默认关闭所有 accordion。 | Manual backups wait for Oxidized's final completion time and status (up to 30 seconds); node edits validate the port, sync nodes.csv, and report reload results; device-panel accordions start collapsed. |
 
 ### v1.2.0 (2026-04-21) ⚠️ 重大升级 / ⚠️ MAJOR UPGRADE
 
@@ -109,6 +110,7 @@
 - **Model Management** - Support for 100+ network device models
 - **One-click Restart** - Restart Oxidized container via UI to load new configuration
 - **Validated Backup Results and History Full View** - Only valid configurations count as successful; read and copy complete historical configs in the main content area
+- **Oxidized Result Synchronization** - Manual backups wait for the final status; device edits validate ports and report config synchronization and service reload results
 - **Secure Sessions** - Automatic logout after 15 minutes idle, authenticated configuration APIs, and server-side session invalidation on logout
 - **Custom Huawei Support** - Built-in `huawei.rb` model with proprietary features for Huawei VRP devices
 
@@ -123,6 +125,7 @@
 - **型号管理** - 支持 100+ 网络设备型号
 - **一键重启** - 通过 UI 重启 Oxidized 容器加载新配置
 - **备份结果校验与历史 Full View** - 仅有效配置标记为成功；可在主内容区完整查看并复制历史配置
+- **Oxidized 结果同步** - 手动备份等待最终状态；编辑设备会验证端口并报告配置同步和服务 reload 结果
 - **安全会话** - 15 分钟无操作自动登出，配置 API 需要登录，退出时服务端会话失效
 - **华为设备深度支持** - 内置自研 `huawei.rb` 型号，支持华为 VRP 设备特性
 

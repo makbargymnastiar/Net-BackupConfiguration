@@ -135,7 +135,20 @@ def node_detail(name):
         if not node:
             return jsonify({"success": False, "error": "Node not found"}), 404
 
-        data = request.json
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"success": False, "error": "A JSON object is required"}), 400
+        try:
+            port = int(data.get("port", node.port))
+        except (ValueError, TypeError):
+            return jsonify(
+                {"success": False, "error": "Port must be a valid number"}
+            ), 400
+        if not 1 <= port <= 65535:
+            return jsonify(
+                {"success": False, "error": "Port must be between 1 and 65535"}
+            ), 400
+
         if "group_id" in data:
             node.group_id = data.get("group_id")
         node.ip = data.get("ip", node.ip)
@@ -143,10 +156,7 @@ def node_detail(name):
             data.get("model", node.model).lower() if data.get("model") else node.model
         )
         node.protocol = data.get("protocol", node.protocol)
-        try:
-            node.port = int(data.get("port", node.port))
-        except (ValueError, TypeError):
-            return jsonify({"success": False, "error": "Port must be a valid number"})
+        node.port = port
         node.username = data.get("username", node.username)
         node.password = data.get("password", node.password)
         node.save()
@@ -154,9 +164,27 @@ def node_detail(name):
         # Sync to CSV for Oxidized
         all_nodes = Node.get_all()
         write_nodes_csv([n.to_dict() for n in all_nodes])
-        reload_oxidized_nodes()
+        oxidized_reloaded = reload_oxidized_nodes()
 
-        return jsonify({"success": True})
+        group_name = next(
+            (item.group_name for item in all_nodes if item.name == node.name),
+            None,
+        )
+        return jsonify(
+            {
+                "success": True,
+                "oxidized_reloaded": oxidized_reloaded,
+                "node": {
+                    "name": node.name,
+                    "ip": node.ip,
+                    "model": node.model,
+                    "protocol": node.protocol,
+                    "port": node.port,
+                    "group_id": node.group_id,
+                    "group_name": group_name,
+                },
+            }
+        )
 
     if request.method == "DELETE":
         # Delete from Oxidized first

@@ -681,8 +681,8 @@ body {
   min-height: 0;
 }
 .device-accordion-item {
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border: 0;
+  border-bottom: 1px solid #f1f5f9;
   overflow: hidden;
   flex: 0 0 auto;
   min-height: 0;
@@ -699,7 +699,7 @@ body {
   width: 100%;
   padding: 11px 12px;
   border: 0;
-  background: var(--bg-card-hover);
+  background: transparent;
   color: var(--text-primary);
   font: inherit;
   font-size: 13px;
@@ -708,7 +708,26 @@ body {
   cursor: pointer;
 }
 .device-accordion-header:hover {
-  background: #eaf1fb;
+  background: #f8fafc;
+}
+.device-accordion-item.open .device-accordion-header {
+  color: #2563eb;
+  background: #eff6ff;
+}
+.device-accordion-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.device-accordion-icon {
+  width: 17px;
+  height: 17px;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.device-accordion-item.open .device-accordion-icon,
+.device-accordion-item.open .device-accordion-header .chevron {
+  color: #2563eb;
 }
 .device-accordion-header .chevron {
   width: 15px;
@@ -719,7 +738,7 @@ body {
   transform: rotate(180deg);
 }
 .device-accordion-content {
-  padding: 12px;
+  padding: 10px 12px 12px 39px;
   max-height: 1000px;
   opacity: 1;
   transition: max-height 160ms ease, opacity 140ms ease, padding 160ms ease;
@@ -769,17 +788,30 @@ body {
 }
 .device-accordion-footer {
   margin-top: auto;
-  padding-top: 12px;
+  padding: 12px 0 0;
+  border-top: 1px solid #f1f5f9;
 }
 .btn-danger-outline {
-  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 12px;
   color: var(--danger-fg);
-  border: 1px solid #fca5a5;
-  background: #fff;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
 }
 .btn-danger-outline:hover {
   background: var(--danger-light);
-  border-color: var(--danger);
+  border-color: #fecaca;
+}
+.btn-danger-outline .icon {
+  width: 16px;
+  height: 16px;
 }
 .right-panel-device-active .action-panel-slot,
 .right-panel-device-active .action-panel-slot > #editModalContent,
