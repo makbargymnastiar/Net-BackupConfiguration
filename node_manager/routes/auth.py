@@ -4,8 +4,21 @@ Auth routes - Authentication and user management with bcrypt.
 
 from flask import request, jsonify, redirect, url_for, session
 from functools import wraps
+from secrets import token_urlsafe
 from routes import auth_bp
 from models.user import User
+from database import create_active_session, delete_active_session
+
+
+def _start_user_session(username):
+    """Replace the current session with a fresh, server-tracked session."""
+    delete_active_session(session.get("session_token"))
+    session.clear()
+    token = token_urlsafe(32)
+    create_active_session(token, username)
+    session.permanent = True
+    session["username"] = username
+    session["session_token"] = token
 
 
 def is_first_time() -> bool:
@@ -63,7 +76,7 @@ def login():
 
     user = User.authenticate(username, password)
     if user:
-        session["username"] = user.username
+        _start_user_session(user.username)
         # Check if user must change password
         if user.must_change_password:
             return jsonify(
@@ -107,7 +120,7 @@ def setup():
     # Create admin user
     try:
         user = User.create_user(username=username, password=password, role="admin")
-        session["username"] = user.username
+        _start_user_session(user.username)
         return jsonify({"success": True})
     except Exception:
         return jsonify({"success": False, "error": "Failed to create user"})
@@ -119,11 +132,21 @@ def check_setup_status():
     return jsonify({"needs_setup": is_first_time()})
 
 
-@auth_bp.route("/api/logout")
+@auth_bp.route("/api/logout", methods=["GET", "POST"])
 def logout():
     """User logout."""
-    session.pop("username", None)
+    delete_active_session(session.get("session_token"))
+    session.clear()
+    if request.method == "POST":
+        return jsonify({"success": True})
     return redirect(url_for("pages.login_page"))
+
+
+@auth_bp.route("/api/session/heartbeat", methods=["POST"])
+@login_required
+def session_heartbeat():
+    """Refresh the server-side idle timer for active user interaction."""
+    return jsonify({"success": True})
 
 
 @auth_bp.route("/api/user-info")

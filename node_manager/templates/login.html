@@ -149,6 +149,13 @@
     </div>
 
     <script>
+        if (new URLSearchParams(window.location.search).get('reason') === 'idle') {
+            const alertBox = document.getElementById('alert');
+            alertBox.textContent = 'Your session ended because of inactivity. Please log in again.';
+            alertBox.classList.add('error');
+            alertBox.style.display = 'block';
+        }
+
         // Eye / eye-off SVG icons (same shapes the dashboard uses) instead of
         // the 👁️ emoji, which rendered inconsistently.
         const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';

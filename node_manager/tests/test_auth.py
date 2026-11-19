@@ -163,6 +163,42 @@ class TestLogout:
         response = test_client_with_auth.get("/api/logout")
         # Should redirect
         assert response.status_code in [302, 200]
+        assert test_client_with_auth.get("/api/user-info").status_code == 302
+
+    def test_configuration_api_requires_authentication(self, client):
+        response = client.get("/api/oxidized/status")
+        assert response.status_code == 302
+        assert client.post("/api/session/heartbeat").status_code == 401
+
+    def test_idle_session_expires_server_side(self, test_client_with_auth):
+        import time
+        import database
+
+        with database.get_db_cursor() as cursor:
+            cursor.execute(
+                "UPDATE active_sessions SET last_activity = ?",
+                (time.time() - database.SESSION_IDLE_TIMEOUT_SECONDS - 1,),
+            )
+
+        response = test_client_with_auth.get("/api/user-info")
+        assert response.status_code == 401
+        assert response.json["session_expired"] is True
+
+    def test_idle_session_redirects_dashboard_to_login_notice(
+        self, test_client_with_auth
+    ):
+        import time
+        import database
+
+        with database.get_db_cursor() as cursor:
+            cursor.execute(
+                "UPDATE active_sessions SET last_activity = ?",
+                (time.time() - database.SESSION_IDLE_TIMEOUT_SECONDS - 1,),
+            )
+
+        response = test_client_with_auth.get("/dashboard")
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/login?reason=idle")
 
 
 class TestUserInfo:

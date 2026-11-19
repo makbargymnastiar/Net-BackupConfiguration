@@ -5,11 +5,13 @@ Database module - SQLite connection and initialization.
 import sqlite3
 import os
 import csv
+import time
 from contextlib import contextmanager
 from typing import Optional, List, Dict, Any
 
 DATABASE_PATH = os.environ.get("DATABASE_PATH", "/oxidized_config/nodes.db")
 CONFIG_FILE = os.environ.get("CONFIG_FILE", "/oxidized_config/nodes.csv")
+SESSION_IDLE_TIMEOUT_SECONDS = 15 * 60
 
 
 def get_db_path() -> str:
@@ -55,7 +57,7 @@ def init_database():
                 username TEXT NOT NULL,
                 password TEXT NOT NULL,
                 last_backup TEXT,
-                last_status TEXT DEFAULT 'pending',
+                last_status TEXT DEFAULT 'no_connection',
                 created_at TEXT DEFAULT (datetime('now')),
                 updated_at TEXT DEFAULT (datetime('now'))
             )
@@ -70,6 +72,14 @@ def init_database():
                 role TEXT DEFAULT 'admin',
                 must_change_password INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS active_sessions (
+                token TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                last_activity REAL NOT NULL
             )
         """)
 
@@ -125,6 +135,18 @@ def init_database():
         # Create indexes
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_nodes_ip ON nodes(ip)")
+        cursor.execute(
+            """
+            UPDATE nodes
+            SET last_status = 'no_connection'
+            WHERE last_backup IS NULL
+              AND (last_status IS NULL OR last_status = 'pending')
+            """
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_active_sessions_username "
+            "ON active_sessions(username)"
+        )
 
         # --- Groups feature migration/setup ---
         # 1) Create groups table if not exists
@@ -145,6 +167,58 @@ def init_database():
 
     # Create default admin user if no users exist
     _create_default_admin_user()
+
+
+def create_active_session(token: str, username: str):
+    """Persist a new server-side session and prune expired session records."""
+    now = time.time()
+    with get_db_cursor() as cursor:
+        cursor.execute(
+            "DELETE FROM active_sessions WHERE last_activity <= ?",
+            (now - SESSION_IDLE_TIMEOUT_SECONDS,),
+        )
+        cursor.execute(
+            "INSERT INTO active_sessions (token, username, last_activity) VALUES (?, ?, ?)",
+            (token, username, now),
+        )
+
+
+def touch_active_session(token: str, refresh=True) -> Optional[str]:
+    """Validate an active session and optionally refresh its idle timer."""
+    if not token:
+        return None
+
+    now = time.time()
+    with get_db_cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT s.username, s.last_activity
+            FROM active_sessions s
+            JOIN users u ON u.username = s.username
+            WHERE s.token = ?
+            """,
+            (token,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        if now - row["last_activity"] >= SESSION_IDLE_TIMEOUT_SECONDS:
+            cursor.execute("DELETE FROM active_sessions WHERE token = ?", (token,))
+            return None
+        if refresh:
+            cursor.execute(
+                "UPDATE active_sessions SET last_activity = ? WHERE token = ?",
+                (now, token),
+            )
+        return row["username"]
+
+
+def delete_active_session(token: Optional[str]):
+    """Invalidate one server-side session."""
+    if not token:
+        return
+    with get_db_cursor() as cursor:
+        cursor.execute("DELETE FROM active_sessions WHERE token = ?", (token,))
 
 
 def log_sync(action: str, details: Optional[str] = None):

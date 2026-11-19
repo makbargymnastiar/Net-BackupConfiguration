@@ -8,16 +8,23 @@ from flask import (
     jsonify,
     flash,
     abort,
+    g,
 )
 import json
 import csv
 import os
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 # Import new database module
-from database import init_database, get_db_path, ensure_csv_synced, get_config_setting
+from database import (
+    init_database,
+    get_db_path,
+    ensure_csv_synced,
+    get_config_setting,
+    touch_active_session,
+)
 from models.node import Node
 from models.user import User
 
@@ -61,6 +68,12 @@ def _resolve_secret_key(raw):
 
 
 app.secret_key = _resolve_secret_key(os.getenv("SECRET_KEY", ""))
+app.config.update(
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=15),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true",
+)
 
 CONFIG_FILE = os.getenv("CONFIG_FILE", "/oxidized_config/nodes.csv")
 OXIDIZED_API_URL = os.getenv("OXIDIZED_API_URL", "http://oxidized:8888")
@@ -95,6 +108,79 @@ app.register_blueprint(groups_bp)
 app.register_blueprint(credentials_bp)
 app.register_blueprint(activity_log_bp)
 app.register_blueprint(pages_bp)
+
+
+@app.before_request
+def enforce_authenticated_sessions():
+    """Protect application pages and every API except the public auth endpoints."""
+    path = request.path
+    username = session.get("username")
+    session_token = session.get("session_token")
+    valid_session = False
+    g.session_expired = False
+
+    if username and session_token:
+        refresh_idle_timer = (
+            path in {"/dashboard", "/force-change-password", "/api/session/heartbeat"}
+            or request.headers.get("Sec-Fetch-Dest") == "document"
+            or (
+                path.startswith("/api/")
+                and path not in {"/api/oxidized/status", "/api/activity-log"}
+            )
+        )
+        valid_session = (
+            touch_active_session(session_token, refresh=refresh_idle_timer) == username
+        )
+        if not valid_session:
+            session.clear()
+            g.session_expired = True
+        elif refresh_idle_timer:
+            session.modified = True
+    elif username:
+        session.clear()
+
+    public_api_paths = {
+        "/api/login",
+        "/api/setup",
+        "/api/check-setup-status",
+        "/api/logout",
+    }
+    protected_page = path in {"/dashboard", "/force-change-password"}
+    protected_api = path.startswith("/api/") and path not in public_api_paths
+
+    if protected_api and not valid_session and (
+        g.session_expired or path == "/api/session/heartbeat"
+    ):
+        return jsonify(
+            {
+                "success": False,
+                "error": "Authentication required",
+                "session_expired": bool(g.session_expired),
+            }
+        ), 401
+    if protected_api and not valid_session:
+        return redirect(url_for("pages.login_page"))
+    if protected_page and not valid_session:
+        target = url_for("pages.login_page")
+        if g.session_expired:
+            target = f"{target}?reason=idle"
+        return redirect(target)
+    if g.session_expired and path in {"/", "/login"}:
+        return redirect(f"{url_for('pages.login_page')}?reason=idle")
+
+
+@app.after_request
+def prevent_sensitive_response_caching(response):
+    """Prevent browser caches from restoring configuration or authenticated pages."""
+    if request.path.startswith("/api/") or request.path in {
+        "/dashboard",
+        "/force-change-password",
+    }:
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Vary"] = "Cookie"
+    return response
+
 
 # Initialize config versions
 from routes.config_api import init_config_versions

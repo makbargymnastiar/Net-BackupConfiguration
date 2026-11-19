@@ -21,7 +21,7 @@ class Node:
         group_id: Optional[int] = None,
         group_name: Optional[str] = None,
         last_backup: Optional[str] = None,
-        last_status: str = "pending",
+        last_status: str = "no_connection",
         id: Optional[int] = None,
         created_at: Optional[str] = None,
         updated_at: Optional[str] = None,

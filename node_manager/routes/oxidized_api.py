@@ -3,6 +3,7 @@ Oxidized API routes - Oxidized integration endpoints.
 """
 
 import difflib
+from datetime import datetime, timezone
 from flask import request, jsonify
 from routes import oxidized_api_bp
 from routes.auth import login_required, admin_required
@@ -13,12 +14,15 @@ from services.oxidized_service import (
     get_oxidized_version_history,
     get_oxidized_version_config,
     trigger_oxidized_backup,
+    is_valid_oxidized_config,
     read_oxidized_interval,
     write_oxidized_interval,
     format_interval,
     get_oxidized_info,
 )
 from services.docker_service import restart_oxidized_container
+from models.node import Node
+from services import activity_log_service
 import requests
 import os
 
@@ -34,10 +38,148 @@ def set_config(oxidized_url, oxidized_config_file):
     OXIDIZED_CONFIG_FILE = oxidized_config_file
 
 
+def _status_entries(status_data):
+    """Yield (name, payload) pairs for either supported Oxidized status shape."""
+    if isinstance(status_data, list):
+        for item in status_data:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("full_name")
+                if name:
+                    yield name, item
+    elif isinstance(status_data, dict):
+        if status_data.get("name") or status_data.get("full_name"):
+            yield status_data.get("name") or status_data.get("full_name"), status_data
+        else:
+            for name, item in status_data.items():
+                if isinstance(item, dict):
+                    yield name, item
+
+
+def _normalize_backup_time(value):
+    if isinstance(value, dict):
+        value = value.get("end")
+    if not value:
+        return None
+    value = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
+    except ValueError:
+        return None
+
+
+def _record_scheduled_backup_results(status_data):
+    """Validate newly completed Oxidized runs and persist their final outcomes."""
+    for node_name, payload in _status_entries(status_data):
+        node = Node.get_by_name(node_name)
+        if not node:
+            continue
+
+        stats = payload.get("stats") or {}
+        last_data = stats.get("last") or payload.get("last") or {}
+        completed_at = _normalize_backup_time(last_data)
+        status_value = payload.get("status") or stats.get("status")
+        if not status_value and isinstance(last_data, dict):
+            status_value = last_data.get("status", "")
+        status_value = str(status_value or "").lower()
+
+        if completed_at and completed_at != _normalize_backup_time(node.last_backup):
+            config = get_oxidized_config(node_name)
+            final_status = (
+                "SUCCESS" if is_valid_oxidized_config(config) else "FAILED"
+            )
+            previous_backup = _normalize_backup_time(node.last_backup)
+            previous_status = node.last_status
+            node.last_backup = completed_at
+            node.last_status = final_status.lower()
+            node.save()
+
+            # A manual trigger records its completion locally before the next
+            # Oxidized poll. Reconcile that timestamp without duplicating its log.
+            previous_dt = None
+            current_dt = None
+            for raw, target in ((previous_backup, "previous"), (completed_at, "current")):
+                try:
+                    parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    if target == "previous":
+                        previous_dt = parsed
+                    else:
+                        current_dt = parsed
+                except (AttributeError, ValueError):
+                    pass
+            is_recent_manual_result = (
+                previous_dt is not None
+                and current_dt is not None
+                and abs((current_dt - previous_dt).total_seconds()) <= 120
+                and previous_status == final_status.lower()
+            )
+            if not is_recent_manual_result:
+                activity_log_service.append_entry(
+                    node_name,
+                    node.ip,
+                    final_status,
+                    timestamp=completed_at,
+                )
+            payload["status"] = node.last_status
+            continue
+
+        error_text = " ".join(
+            str(source.get(key) or "")
+            for source in (payload, stats, last_data if isinstance(last_data, dict) else {})
+            for key in ("error", "exception", "message")
+        ).lower()
+        has_error_message = any(
+            marker in error_text
+            for marker in (
+                "node not found",
+                "connection refused",
+                "timed out",
+                "timeout",
+                "authentication failed",
+                "auth failed",
+                "failed to connect",
+            )
+        )
+        has_failed_status = status_value in {"failed", "error", "failure"} or any(
+            marker in status_value
+            for marker in ("authentication_error", "connection_error", "timeout")
+        )
+        if (
+            has_failed_status or has_error_message
+        ) and node.last_status != "failed":
+            node.last_status = "failed"
+            node.save()
+            activity_log_service.append_entry(
+                node_name, node.ip, "FAILED"
+            )
+        elif status_value in {"success", "successful"} and node.last_status != "success":
+            config = get_oxidized_config(node_name)
+            node.last_status = (
+                "success" if is_valid_oxidized_config(config) else "failed"
+            )
+            node.save()
+            activity_log_service.append_entry(
+                node_name,
+                node.ip,
+                "SUCCESS" if node.last_status == "success" else "FAILED",
+            )
+        elif not node.last_backup and status_value in {"", "pending", "no_connection"}:
+            node.last_status = "no_connection"
+            node.save()
+
+        if node.last_status in {"success", "failed", "no_connection"}:
+            payload["status"] = node.last_status
+
+
 @oxidized_api_bp.route("/api/oxidized/status", methods=["GET"])
 def oxidized_status():
     """Get all nodes Oxidized status."""
     status = get_oxidized_nodes_status()
+    _record_scheduled_backup_results(status)
     return jsonify(status)
 
 
@@ -99,9 +241,9 @@ def oxidized_node_status(node_name):
 def oxidized_node_config(node_name):
     """Get node current config."""
     config = get_oxidized_config(node_name)
-    if config is not None:
+    if is_valid_oxidized_config(config):
         return jsonify({"config": config})
-    return jsonify({"error": "Failed to get config"}), 404
+    return jsonify({"error": "Failed to get a valid configuration"}), 502
 
 
 @oxidized_api_bp.route("/api/oxidized/node/<node_name>/history", methods=["GET"])
@@ -117,7 +259,7 @@ def oxidized_node_history(node_name):
 def oxidized_node_version_config(node_name, version_num):
     """Get node specific version config by integer version number."""
     config = get_oxidized_version_config(node_name, version_num)
-    if config is not None:
+    if is_valid_oxidized_config(config):
         return jsonify({"config": config})
     return jsonify({"error": "Failed to get version config"}), 404
 
@@ -155,7 +297,7 @@ def oxidized_node_version_by_oid(node_name):
                 pass
 
     config = get_oxidized_version_config(node_name, oid, epoch)
-    if config is not None:
+    if is_valid_oxidized_config(config):
         return jsonify({"config": config})
     return jsonify({"error": "Failed to get version config"}), 404
 
@@ -163,10 +305,22 @@ def oxidized_node_version_by_oid(node_name):
 @oxidized_api_bp.route("/api/oxidized/node/<node_name>/backup", methods=["POST"])
 def oxidized_node_backup(node_name):
     """Trigger immediate backup."""
+    node = Node.get_by_name(node_name)
+    if not node:
+        return jsonify({"success": False, "error": "Backup failed"}), 404
+
     result = trigger_oxidized_backup(node_name)
-    if "error" in result:
+    if not result.get("success"):
+        node.last_status = "failed"
+        node.save()
         return jsonify({"success": False, "error": "Backup failed"}), 500
-    return jsonify({"success": True, "result": result})
+
+    from datetime import datetime, timezone
+
+    node.last_status = "success"
+    node.last_backup = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    node.save()
+    return jsonify({"success": True})
 
 
 @oxidized_api_bp.route(

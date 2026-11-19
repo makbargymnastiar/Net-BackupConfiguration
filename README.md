@@ -15,6 +15,12 @@
 
 > 📋 **完整更新日志请查看 [CHANGELOG.md](CHANGELOG.md)** / **Full changelog: [CHANGELOG.md](CHANGELOG.md)**
 
+### Unreleased / 未发布
+
+| 中文 | English |
+|------|---------|
+| 备份结果现在依据有效配置验证；Backup History 支持 Full View；会话在 15 分钟无操作后失效，并保护所有配置 API。 | Backup results are validated against returned configuration; Backup History supports Full View; sessions expire after 15 minutes idle and protect all configuration APIs. |
+
 ### v1.2.0 (2026-04-21) ⚠️ 重大升级 / ⚠️ MAJOR UPGRADE
 
 > **🔴 核心重构**：本次更新包含程序架构重构、UI 完全重写、新增多个 API 模块。
@@ -100,6 +106,8 @@
 - **Credential Management** - Centralized management of device access credentials
 - **Model Management** - Support for 100+ network device models
 - **One-click Restart** - Restart Oxidized container via UI to load new configuration
+- **Validated Backup Results and History Full View** - Only valid configurations count as successful; read and copy complete historical configs in the main content area
+- **Secure Sessions** - Automatic logout after 15 minutes idle, authenticated configuration APIs, and server-side session invalidation on logout
 - **Custom Huawei Support** - Built-in `huawei.rb` model with proprietary features for Huawei VRP devices
 
 ### 中文
@@ -112,6 +120,8 @@
 - **凭证管理** - 集中管理设备访问凭据
 - **型号管理** - 支持 100+ 网络设备型号
 - **一键重启** - 通过 UI 重启 Oxidized 容器加载新配置
+- **备份结果校验与历史 Full View** - 仅有效配置标记为成功；可在主内容区完整查看并复制历史配置
+- **安全会话** - 15 分钟无操作自动登出，配置 API 需要登录，退出时服务端会话失效
 - **华为设备深度支持** - 内置自研 `huawei.rb` 型号，支持华为 VRP 设备特性
 
 ---
@@ -488,6 +498,7 @@ docker exec oxidized-node-manager cat /oxidized_config/nodes.csv
 2. **限制端口访问 / Restrict port access** - 生产环境使用防火墙限制 8080/8888 端口
 3. **启用 HTTPS / Enable HTTPS** - 使用 nginx 反向代理 + SSL 证书
 4. **定期备份 / Regular backup** - 建立备份策略并定期执行备份
+5. **启用 Secure Cookie / Enable Secure cookies** - HTTPS 部署时在 `.env` 设置 `SESSION_COOKIE_SECURE=true`
 
 ---
 

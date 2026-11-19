@@ -75,6 +75,51 @@ def get_oxidized_config(node_name):
         return None
 
 
+def is_valid_oxidized_config(config):
+    """Reject missing, empty, or common Oxidized/device error responses."""
+    if not isinstance(config, str) or not config.strip():
+        return False
+    content = config.strip().lower()
+    first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
+    if first_line.startswith(
+        ("error", "failed", "node not found", "not found", "no config", "timeout")
+    ):
+        return False
+    error_markers = (
+        "node not found",
+        "no config",
+        "connection refused",
+        "connection timed out",
+        "connection timeout",
+        "authentication failed",
+        "authentication error",
+        "auth failed",
+        "unable to connect",
+        "failed to connect",
+        "no_connection",
+    )
+    return not any(marker in content for marker in error_markers)
+
+
+def _is_oxidized_error_message(message):
+    if not isinstance(message, str):
+        return False
+    content = message.strip().lower()
+    error_markers = (
+        "node not found",
+        "connection refused",
+        "connection timed out",
+        "connection timeout",
+        "authentication failed",
+        "authentication error",
+        "auth failed",
+        "unable to connect",
+        "failed to connect",
+        "no_connection",
+    )
+    return any(marker in content for marker in error_markers)
+
+
 def get_oxidized_version_history(node_name):
     """Get node version history."""
     try:
@@ -237,19 +282,41 @@ def get_oxidized_version_config(node_name, oid, epoch=None):
 
 
 def trigger_oxidized_backup(node_name):
-    """Trigger immediate backup."""
+    """Trigger backup and verify that Oxidized returns actual configuration."""
     try:
         response = requests.get(
             f"{OXIDIZED_API_URL}/node/next/{node_name}.json",
             headers=_get_headers(),
             timeout=30
         )
-        if response.status_code == 200:
-            return response.json()
-        return {"error": f"HTTP {response.status_code}"}
-    except Exception as e:
-        print(f"Error triggering Oxidized backup for {node_name}: {e}")
-        return {"error": "Backup request failed"}
+        if response.status_code != 200:
+            return {"success": False, "error": "Oxidized backup request failed"}
+        try:
+            result = response.json()
+        except ValueError:
+            return {"success": False, "error": "Oxidized returned an invalid response"}
+
+        if isinstance(result, dict):
+            if result.get("error") or result.get("exception"):
+                return {"success": False, "error": "Oxidized backup failed"}
+            if result.get("success") is False or result.get("ok") is False:
+                return {"success": False, "error": "Oxidized backup failed"}
+            message = result.get("message")
+            if message and _is_oxidized_error_message(str(message)):
+                return {"success": False, "error": "Oxidized backup failed"}
+            status = str(result.get("status", "")).lower()
+            if status in {"failed", "error", "no_connection"}:
+                return {"success": False, "error": "Oxidized backup failed"}
+        elif isinstance(result, str) and _is_oxidized_error_message(result):
+            return {"success": False, "error": "Oxidized backup failed"}
+
+        config = get_oxidized_config(node_name)
+        if not is_valid_oxidized_config(config):
+            return {"success": False, "error": "No valid configuration returned"}
+        return {"success": True}
+    except requests.RequestException:
+        print(f"Error triggering Oxidized backup for {node_name}")
+        return {"success": False, "error": "Backup request failed"}
 
 
 def get_oxidized_info():

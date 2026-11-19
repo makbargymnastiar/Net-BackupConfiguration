@@ -969,8 +969,87 @@ function logActivityEvent(hostname, message) {
 // ============ Logout ============
 function logout() {
   confirmAction("Are you sure you want to logout?", () => {
-    window.location.href = "/api/logout";
+    clearClientSessionState();
+    fetch("/api/logout", { method: "POST" }).finally(() => {
+      window.location.replace("/login");
+    });
   });
+}
+
+const IDLE_SESSION_TIMEOUT_MS = 15 * 60 * 1000;
+const SESSION_HEARTBEAT_INTERVAL_MS = 60 * 1000;
+let lastSessionActivityAt = Date.now();
+let lastSessionHeartbeatAt = 0;
+let idleSessionTimer = null;
+let sessionLogoutStarted = false;
+
+function clearClientSessionState() {
+  sessionStorage.clear();
+  for (const key of Object.keys(localStorage)) {
+    if (/^(token|auth|session)/i.test(key)) localStorage.removeItem(key);
+  }
+}
+
+function endIdleSession() {
+  if (sessionLogoutStarted) return;
+  sessionLogoutStarted = true;
+  clearClientSessionState();
+  fetch("/api/logout", { method: "POST", keepalive: true }).finally(() => {
+    window.location.replace("/login?reason=idle");
+  });
+}
+
+function returnToLogin() {
+  if (sessionLogoutStarted) return;
+  sessionLogoutStarted = true;
+  clearClientSessionState();
+  fetch("/api/logout", { method: "POST", keepalive: true }).finally(() => {
+    window.location.replace("/login");
+  });
+}
+
+function sendSessionHeartbeat() {
+  if (Date.now() - lastSessionHeartbeatAt < SESSION_HEARTBEAT_INTERVAL_MS) {
+    return;
+  }
+  lastSessionHeartbeatAt = Date.now();
+  fetch("/api/session/heartbeat", {
+    method: "POST",
+    keepalive: true,
+  }).then((response) => {
+    if (response.status === 401) {
+      response.json().then((data) => {
+        if (data.session_expired) endIdleSession();
+        else returnToLogin();
+      }).catch(returnToLogin);
+    }
+  }).catch(() => {});
+}
+
+function noteSessionActivity() {
+  if (Date.now() - lastSessionActivityAt >= IDLE_SESSION_TIMEOUT_MS) {
+    endIdleSession();
+    return;
+  }
+  lastSessionActivityAt = Date.now();
+  clearTimeout(idleSessionTimer);
+  idleSessionTimer = setTimeout(endIdleSession, IDLE_SESSION_TIMEOUT_MS);
+  sendSessionHeartbeat();
+}
+
+function initializeIdleSessionTimeout() {
+  const activityEvents = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
+  activityEvents.forEach((eventName) => {
+    document.addEventListener(eventName, noteSessionActivity, { passive: true });
+  });
+  window.addEventListener("pageshow", () => {
+    if (Date.now() - lastSessionActivityAt >= IDLE_SESSION_TIMEOUT_MS) {
+      endIdleSession();
+      return;
+    }
+    sendSessionHeartbeat();
+  });
+  idleSessionTimer = setTimeout(endIdleSession, IDLE_SESSION_TIMEOUT_MS);
 }
 
 // Account dropdown: Logout / Change Password are hidden until the admin
@@ -1068,11 +1147,14 @@ function refreshOxidizedStatus(silent) {
     .then((r) => r.json())
     .then((data) => {
       oxidizedStatus = {};
-      if (Array.isArray(data)) {
-        data.forEach((node) => {
-          oxidizedStatus[node.name] = node;
-        });
-      }
+      const nodes = Array.isArray(data)
+        ? data
+        : Object.entries(data || {}).map(([name, node]) =>
+            Object.assign({ name }, node),
+          );
+      nodes.forEach((node) => {
+        if (node && node.name) oxidizedStatus[node.name] = node;
+      });
       refreshNodes();
       finish();
     })
@@ -1173,31 +1255,33 @@ function getOxidizedStatusOnly(nodeName) {
   }
   const status = oxidizedStatus[nodeName];
   if (!status) {
-    return '<span class="status-text status-muted"><span class="status-dot"></span>Not in Oxidized</span>';
+    return '<span class="status-text status-not-connected"><span class="status-dot"></span>Not Connected</span>';
   }
-  if (status.status === "success") {
+  const statusValue = String(status.status || status.last_status || "").toLowerCase();
+  if (statusValue === "success" || statusValue === "successful") {
     return '<span class="status-text status-success"><span class="status-dot"></span>Success</span>';
   }
-  if (status.status === "failed") {
+  if (statusValue === "failed" || statusValue === "error") {
     return '<span class="status-text status-failed"><span class="status-dot"></span>Failed</span>';
   }
-  return `<span class="status-text status-pending"><span class="status-dot"></span>${escapeHtml(status.status || "Unknown")}</span>`;
+  if (statusValue === "no_connection" || statusValue === "pending" || !statusValue) {
+    return '<span class="status-text status-not-connected"><span class="status-dot"></span>Not Connected</span>';
+  }
+  return `<span class="status-text status-pending"><span class="status-dot"></span>${escapeHtml(status.status)}</span>`;
 }
 
 function getOxidizedStatusBadge(nodeName) {
   const status = oxidizedStatus[nodeName];
   if (!status) {
-    return '<span style="color: #999;">Not in Oxidized</span>';
+    return '<span class="status-text status-not-connected">Not Connected</span>';
   }
   const lastSync = getOxidizedLastSync(status);
   const statusText =
     status.status === "success"
       ? '<span style="color: #28a745;">✓ Success</span>'
-      : status.status === "failed"
+      : status.status === "failed" || status.status === "error"
         ? '<span style="color: #dc3545;">✗ Failed</span>'
-        : '<span style="color: #ffc107;">⏳ ' +
-          (status.status || "Unknown") +
-          "</span>";
+        : '<span class="status-text status-not-connected">Not Connected</span>';
   return `<div>${statusText}</div><div style="font-size: 11px; color: #666;">${lastSync}</div>`;
 }
 
@@ -1420,13 +1504,13 @@ function viewConfig(nodeName) {
     .then((data) => {
       if (data.config) {
         document.getElementById("viewConfigContent").value = data.config;
-        setPill("Load Config Completed", true);
+        setPill("Backup Completed", true);
       } else {
-        setPill("Load Config Failed", false);
+        setPill("Backup Failed", false);
       }
     })
     .catch(() => {
-      setPill("Load Config Failed", false);
+      setPill("Backup Failed", false);
     });
 }
 
@@ -1628,7 +1712,10 @@ function renderHistoryListScreen() {
           <div class="history-item-title">Data Backup #${num}</div>
           <div class="history-item-time">${escapeHtml(timeLine)}</div>
         </div>
-        <button type="button" class="btn history-view-btn" onclick="viewHistoryEntry('${escapeHtml(v.oid)}')">View</button>
+        <div class="history-row-actions">
+          <button type="button" class="btn history-view-btn" onclick="viewHistoryEntry('${escapeHtml(v.oid)}')">View</button>
+          <button type="button" class="btn history-full-view-btn" onclick="openHistoryFullView('${escapeHtml(v.oid)}', ${num})">Full View</button>
+        </div>
       </div>
     `;
   });
@@ -1693,11 +1780,12 @@ function viewHistoryEntry(oid) {
 
   slot.innerHTML = `
     <div class="history-detail">
-      <button type="button" class="history-back-btn" onclick="renderHistoryListScreen()">&larr; Back to History</button>
+    <button type="button" class="btn history-back-btn" onclick="renderHistoryListScreen()"><span aria-hidden="true">&larr;</span> Back to History</button>
       <div class="history-detail-title">BACKUP #${num}</div>
-      <div class="history-detail-meta">
-        <span>${escapeHtml(dateKey)}</span>
-        <span>${escapeHtml(timeLine)}</span>
+    <div class="history-detail-device">${escapeHtml(historyState.nodeName)}</div>
+    <div class="history-detail-meta">
+      <span>${escapeHtml(dateKey)}</span>
+      <span>${escapeHtml(timeLine)}</span>
       </div>
       <div class="history-detail-section-label">Status</div>
       <div class="history-detail-status" id="history-detail-status">
@@ -1707,9 +1795,11 @@ function viewHistoryEntry(oid) {
       <textarea class="history-detail-config" id="history-detail-config" readonly>Loading…</textarea>
       <div class="history-detail-actions">
         <button type="button" class="btn" onclick="copyVersionConfig()">Copy</button>
+        <button type="button" class="btn" onclick="openHistoryFullView('${escapeHtml(oid)}', ${num})">Full View</button>
       </div>
     </div>
   `;
+  window.currentVersionConfig = "";
 
   fetch(
     `/api/oxidized/node/${historyState.nodeName}/version?oid=${encodeURIComponent(oid)}&epoch=${encodeURIComponent(epochSecs)}`,
@@ -1731,6 +1821,106 @@ function viewHistoryEntry(oid) {
       document.getElementById("history-detail-status").innerHTML =
         `<span class="status-text status-failed">Error: ${escapeHtml(err.message)}</span>`;
     });
+}
+
+function openHistoryFullView(oid, backupNumber) {
+  if (!historyState) return;
+  const container = document.getElementById("compareViewContainer");
+  if (!container) return;
+  if (container.querySelector("#diffModalContent")) closeDiffModal();
+
+  const entry = historyState.data.find((item) => item.oid === oid);
+  if (!entry) return;
+  const { dateKey, timeLine, epochSecs } = formatHistoryDateParts(
+    entry.time || entry.date || "",
+  );
+  const nodeName = historyState.nodeName;
+  const encodedName = encodeURIComponent(nodeName);
+  const encodedOid = encodeURIComponent(oid);
+  window.currentVersionConfig = "";
+
+  container.innerHTML = `
+    <section class="full-view-shell" aria-label="Full backup configuration">
+      <header class="full-view-header">
+        <div>
+          <p class="full-view-eyebrow">Backup History</p>
+          <h2>${escapeHtml(nodeName)} <span>· Backup #${backupNumber}</span></h2>
+          <div class="full-view-meta">
+            <span>${escapeHtml(dateKey)}</span>
+            <span>${escapeHtml(timeLine)}</span>
+          </div>
+        </div>
+        <div class="full-view-status" id="full-view-status">
+          <span class="status-text status-pending"><span class="status-dot"></span>Loading</span>
+        </div>
+      </header>
+      <textarea class="full-view-config" id="full-view-config" readonly aria-label="Backup configuration">Loading configuration…</textarea>
+      <footer class="full-view-actions">
+        <button type="button" class="btn" id="full-view-copy-btn" disabled onclick="copyFullViewConfig()">Copy Config</button>
+        <button type="button" class="btn" onclick="closeHistoryFullView()">Close</button>
+      </footer>
+    </section>
+  `;
+  container.classList.add("show");
+  const contentArea = document.querySelector(".content");
+  if (contentArea) {
+    contentArea.scrollTop = 0;
+    contentArea.classList.add("compare-open");
+  }
+
+  fetch(
+    `/api/oxidized/node/${encodedName}/version?oid=${encodedOid}&epoch=${encodeURIComponent(epochSecs)}`,
+  )
+    .then((response) => response.json())
+    .then((data) => {
+      const configBox = document.getElementById("full-view-config");
+      const status = document.getElementById("full-view-status");
+      const copyButton = document.getElementById("full-view-copy-btn");
+      if (!configBox || !status || !copyButton) return;
+      if (typeof data.config === "string" && data.config.length > 0) {
+        configBox.value = data.config;
+        window.currentVersionConfig = data.config;
+        status.innerHTML = '<span class="status-text status-success"><span class="status-dot"></span>Success</span>';
+        copyButton.disabled = false;
+      } else {
+        configBox.value = "";
+        status.innerHTML = '<span class="status-text status-failed"><span class="status-dot"></span>Failed</span>';
+      }
+    })
+    .catch(() => {
+      const configBox = document.getElementById("full-view-config");
+      const status = document.getElementById("full-view-status");
+      if (configBox) configBox.value = "";
+      if (status) {
+        status.innerHTML = '<span class="status-text status-failed"><span class="status-dot"></span>Failed</span>';
+      }
+    });
+}
+
+function copyFullViewConfig() {
+  if (!window.currentVersionConfig) return;
+  copyTextToClipboard(window.currentVersionConfig)
+    .then(() => {
+      const button = document.getElementById("full-view-copy-btn");
+      if (button) {
+        button.textContent = "Copied!";
+        setTimeout(() => {
+          if (button.isConnected) button.textContent = "Copy Config";
+        }, 1600);
+      }
+      showInfoToast("Version config copied to clipboard");
+    })
+    .catch(() => showInfoToast("Failed to copy config", true));
+}
+
+function closeHistoryFullView() {
+  const container = document.getElementById("compareViewContainer");
+  if (container) {
+    container.classList.remove("show");
+    container.innerHTML = "";
+  }
+  const contentArea = document.querySelector(".content");
+  if (contentArea) contentArea.classList.remove("compare-open");
 }
 
 function copyVersionConfig() {
@@ -1936,6 +2126,7 @@ function revealDiffInContent() {
   if (!content) return;
   const container = document.getElementById("compareViewContainer");
   if (!container) return;
+  container.innerHTML = "";
   container.appendChild(content);
   container.classList.add("show");
   diffShownInPanel = false;
@@ -1958,7 +2149,10 @@ function closeDiffModal() {
   // Hand the diff content back to its own modal and hide the center overlay so
   // the device list underneath reappears.
   if (modal && content) modal.appendChild(content);
-  if (container) container.classList.remove("show");
+  if (container) {
+    container.classList.remove("show");
+    container.innerHTML = "";
+  }
 
   // Restore the page-content scroll now that the overlay is gone.
   const contentArea = document.querySelector(".content");
@@ -2728,10 +2922,17 @@ function doTriggerBackup(nodeName) {
         updateActivityLogEntry(logId, "failed", now);
         showInfoToast(`Backup failed (${nodeName})`, true);
       }
+      refreshNodeDisplays();
     })
     .catch(() => {
+      oxidizedStatus[nodeName] = Object.assign(
+        {},
+        oxidizedStatus[nodeName],
+        { status: "failed" },
+      );
       setTriggerStatus(nodeName, null);
       updateActivityLogEntry(logId, "failed", Date.now());
+      refreshNodeDisplays();
       showInfoToast(`Backup failed (${nodeName})`, true);
     });
 }
@@ -4422,6 +4623,7 @@ loadSchedulerSettings();
 loadGroups();
 refreshOxidizedStatus(true); // silent on load; only the Refresh button pops a toast
 loadActivityLog();
+initializeIdleSessionTimeout();
 setInterval(() => refreshOxidizedStatus(true), 60000);
 // Refresh the persisted Activity Log from the server every minute so outcomes
 // recorded by other sessions/browsers appear without a manual reload.

@@ -6,6 +6,10 @@ Network device configuration backup management system, built on Oxidized, provid
 
 > 📋 **Full changelog: [CHANGELOG.md](CHANGELOG.md)**
 
+### Unreleased
+
+- Backup results are validated against returned configuration; Backup History supports Full View; sessions expire after 15 minutes idle and protect all configuration APIs.
+
 ### v1.2.0 (2026-04-21) ⚠️ MAJOR UPGRADE
 
 > **🔴 Core Refactoring**: This release includes application architecture refactoring, complete UI rewrite, and new API modules.
@@ -69,6 +73,8 @@ Network device configuration backup management system, built on Oxidized, provid
 - **Credential Management** - Centralized management of device access credentials
 - **Model Management** - Support for 100+ network device models
 - **One-click Restart** - Restart Oxidized container via UI to load new configuration
+- **Validated Backup Results and History Full View** - Only valid configurations count as successful; read and copy complete historical configs in the main content area
+- **Secure Sessions** - Automatic logout after 15 minutes idle, authenticated configuration APIs, and server-side session invalidation on logout
 
 ## System Architecture
 
@@ -417,6 +423,7 @@ docker exec oxidized-node-manager cat /oxidized_config/nodes.csv
 2. **Restrict port access** - Use firewall to restrict ports 8080/8888 in production
 3. **Enable HTTPS** - Use nginx reverse proxy + SSL certificate
 4. **Regular backup** - Establish backup strategy and perform regular backups
+5. **Enable Secure cookies** - Set `SESSION_COOKIE_SECURE=true` in `.env` when deploying over HTTPS
 
 ## License
 

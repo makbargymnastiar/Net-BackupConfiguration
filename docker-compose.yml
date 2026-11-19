@@ -40,6 +40,7 @@ services:
       # Fail fast with a clear message instead of passing an empty string
       # into the container (an empty SECRET_KEY breaks Flask sessions).
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY wajib diisi}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
 
       DATABASE_PATH: /oxidized_config/nodes.db
       CONFIG_FILE: /oxidized_config/nodes.csv

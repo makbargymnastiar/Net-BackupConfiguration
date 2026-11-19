@@ -64,6 +64,15 @@ Oxidized 配置文件（如 `/oxidized_config/config`）以明文形式存储设
 
 ---
 
+## Web Session Protection / Web 会话保护
+
+| 中文 | English |
+|------|---------|
+| Node Manager 会话在 15 分钟无用户活动后过期；受保护页面及所有 `/api/` 配置接口都要求有效登录。服务端保存会话令牌并在退出或超时后使其失效，敏感页面/API 响应设置为不可缓存。 | Node Manager sessions expire after 15 minutes without user activity; protected pages and all `/api/` configuration endpoints require a valid login. Session tokens are tracked server-side and invalidated on logout or timeout; sensitive page/API responses are marked non-cacheable. |
+| HTTPS 部署时请在 `.env` 中设置 `SESSION_COOKIE_SECURE=true`；该选项在 HTTP 开发部署中默认关闭，以便本地访问。 | For HTTPS deployments, set `SESSION_COOKIE_SECURE=true` in `.env`; it defaults to false for HTTP development setups. |
+
+---
+
 ## Code Scanning Alerts / 代码扫描告警
 
 This project uses GitHub CodeQL scanning. See [GitHub Security > Code Scanning](https://github.com/daihy/oxidized-node-manager/security/code-scanning) for the full alert list.

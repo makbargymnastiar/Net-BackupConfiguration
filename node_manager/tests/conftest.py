@@ -6,6 +6,7 @@ import pytest
 import os
 import sys
 import tempfile
+from secrets import token_urlsafe
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -62,6 +63,7 @@ def clean_db():
     cursor.execute("DELETE FROM users")
     cursor.execute("DELETE FROM nodes")
     cursor.execute("DELETE FROM sync_log")
+    cursor.execute("DELETE FROM active_sessions")
     conn.commit()
     conn.close()
     yield
@@ -71,6 +73,7 @@ def clean_db():
     cursor.execute("DELETE FROM users")
     cursor.execute("DELETE FROM nodes")
     cursor.execute("DELETE FROM sync_log")
+    cursor.execute("DELETE FROM active_sessions")
     conn.commit()
     conn.close()
 
@@ -87,6 +90,9 @@ def test_user(clean_db):
 @pytest.fixture
 def test_client_with_auth(client, test_user):
     """Client with authenticated session."""
+    token = token_urlsafe(32)
+    database.create_active_session(token, test_user.username)
     with client.session_transaction() as sess:
         sess["username"] = test_user.username
+        sess["session_token"] = token
     return client
