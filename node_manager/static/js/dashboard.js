@@ -494,7 +494,7 @@ window.addEventListener("resize", () => {
 });
 
 // ============ Right Panel: Action / Detail wiring ============
-// Connects the 6 device actions (Edit, Load Config, History, Backup Trigger,
+// Connects device actions (Edit, History, Backup Trigger,
 // Schedule Backup, Delete) to the permanent Right Panel instead of opening
 // them as modal popups. This reuses each action's existing handler/markup
 // as-is — only *where* the result is shown changes (Right Panel instead of
@@ -509,7 +509,7 @@ const ACTION_DETAIL_PANEL_DEFAULT_HTML = `
     </svg>
     <p>No action selected</p>
     <p class="right-panel-placeholder-sub">
-      Details for Edit, Load Config, History, Backup Trigger, Schedule
+      Details for Edit, History, Backup Trigger, Schedule
       Backup, or Delete will appear here.
     </p>
   </div>
@@ -526,7 +526,6 @@ let deviceAccordionActive = false;
 let activeDeviceAccordionSection = null;
 
 const DEVICE_ACCORDION_SECTIONS = {
-  "Load Config": "load-config",
   "Backup History": "backup-history",
   "Schedule Backup": "schedule-backup",
   "Edit Node": "edit-node",
@@ -583,7 +582,6 @@ function openDeviceManagerPanel(deviceName) {
   body.innerHTML = `
     <div class="device-accordion">
       ${[
-        ["load-config", "Load Config"],
         ["backup-history", "Backup History"],
         ["schedule-backup", "Schedule Backup"],
         ["edit-node", "Edit Node"],
@@ -612,7 +610,6 @@ function openDeviceManagerPanel(deviceName) {
 
 function getDeviceAccordionIcon(section) {
   const paths = {
-    "load-config": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/>',
     "backup-history": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     "schedule-backup": '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
     "edit-node": '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/>',
@@ -650,8 +647,7 @@ function toggleDeviceAccordion(section) {
   activeDeviceAccordionSection = wasOpen ? null : section;
   if (wasOpen) return;
 
-  if (section === "load-config") viewConfig(currentPanelDevice);
-  else if (section === "backup-history") viewVersionHistory(currentPanelDevice);
+  if (section === "backup-history") viewVersionHistory(currentPanelDevice);
   else if (section === "schedule-backup")
     openDeviceOrGroupSchedule("node", currentPanelDevice);
   else if (section === "edit-node") openEditModal(currentPanelDevice);
@@ -736,7 +732,7 @@ const COMPACT_ACTION_LABELS = new Set([
 ]);
 
 // Reveals the Action section (panel splits into Action + Activity Log) and
-// renames its heading to whatever action was picked (Edit, Load Config,
+// renames its heading to whatever action was picked (Edit, History,
 // History, Backup Trigger, Schedule Backup, Delete) instead of a generic
 // "Action / Detail" label. Returns the empty slot element the caller should
 // fill in.
@@ -795,7 +791,7 @@ function setActionPanelContext(deviceName, actionLabel) {
     actionSection.classList.remove("right-panel-action-hidden");
   const titleEl = document.getElementById("right-panel-action-title");
   // Single header line "(action icon) Title — device". The icon matches the
-  // same action in the device row's pencil menu (Edit=pencil, Load Config=document).
+  // same action in the device row's action menu (Edit=pencil, History=clock).
   if (titleEl) {
     const icon = ACTION_PANEL_ICONS[actionLabel] || PENCIL_ICON_SVG;
     const text = deviceName
@@ -1821,11 +1817,13 @@ function copyConfig() {
 
 // ============ Oxidized Version History ============
 // ============ Backup History (Right Panel): grouped by date, View, Compare ============
-// Reuses the exact same endpoints as before:
-//   GET /api/oxidized/node/{name}/history   (list)
+// Uses the per-node Git history endpoint and exact config versions:
+//   GET /api/oxidized/node/{name}/versions  (list)
 //   GET /api/oxidized/node/{name}/version   (single backup config, used by View)
 //   GET /api/oxidized/node/{name}/diff      (used by Compare, via the existing showDiff())
 let historyState = null; // { nodeName, data, selected: [{oid, epoch, num}] }
+const historyCache = Object.create(null);
+let historyLoadSequence = 0;
 
 // ===== TEMP MOCK HISTORY (UI review only) =====
 // Sample versions used ONLY while developing the History layout against the
@@ -1849,33 +1847,58 @@ function viewVersionHistory(nodeName) {
   const slot = setActionPanelContext(nodeName, "Backup History");
   actionPanelCurrentModal = null; // History now renders directly in the panel, no modal borrowed
   if (!slot) return;
-  historyState = { nodeName, data: [], selected: [] };
+  const cached = historyCache[nodeName];
+  historyState = {
+    nodeName,
+    data: cached ? cached.data.slice() : [],
+    selected: cached ? cached.selected.slice() : [],
+    loading: true,
+    error: "",
+  };
+  const state = historyState;
+  const requestId = ++historyLoadSequence;
+  renderHistoryListScreen();
 
-  slot.innerHTML = `
-    <div class="history-panel">
-      <div class="history-list">
-        <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 220px;"></span></div>
-        <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 220px;"></span></div>
-        <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 220px;"></span></div>
-      </div>
-    </div>
-  `;
-
-  fetch(`/api/oxidized/node/${nodeName}/history`)
-    .then((r) => r.json())
+  fetch(`/api/oxidized/node/${encodeURIComponent(nodeName)}/versions`)
+    .then((r) => {
+      if (!r.ok) throw new Error(`Request failed (${r.status})`);
+      return r.json();
+    })
     .then((data) => {
+      if (
+        requestId !== historyLoadSequence ||
+        historyState !== state ||
+        !slot.isConnected
+      ) {
+        return;
+      }
       let arr = Array.isArray(data) ? data : [];
       if (HISTORY_MOCK_ENABLED && arr.length === 0) arr = getMockHistory();
-      historyState.data = arr;
+      state.data = arr;
+      state.selected = state.selected.filter((selected) =>
+        arr.some((entry) => entry.oid === selected.oid),
+      );
+      state.loading = false;
+      historyCache[nodeName] = {
+        data: arr.slice(),
+        selected: state.selected.slice(),
+      };
       renderHistoryListScreen();
     })
     .catch((err) => {
-      if (HISTORY_MOCK_ENABLED) {
-        historyState.data = getMockHistory();
-        renderHistoryListScreen();
+      if (
+        requestId !== historyLoadSequence ||
+        historyState !== state ||
+        !slot.isConnected
+      ) {
         return;
       }
-      slot.innerHTML = `<div class="history-empty">Error: ${escapeHtml(err.message)}</div>`;
+      state.loading = false;
+      state.error = err.message || "Unable to load backup history";
+      if (HISTORY_MOCK_ENABLED && state.data.length === 0) {
+        state.data = getMockHistory();
+      }
+      renderHistoryListScreen();
     });
 }
 
@@ -1913,8 +1936,20 @@ function renderHistoryListScreen() {
   const data = historyState.data || [];
   const selected = historyState.selected || [];
 
+  const refreshIndicator = historyState.loading
+    ? '<div class="history-refresh-status" role="status">Refreshing backup history…</div>'
+    : historyState.error
+      ? `<div class="history-refresh-status history-refresh-error" role="status">${escapeHtml(historyState.error)}</div>`
+      : "";
+
   if (data.length === 0) {
-    slot.innerHTML = `<div class="history-empty">No backup history found</div>`;
+    slot.innerHTML = historyState.loading
+      ? `<div class="history-panel">${refreshIndicator}<div class="history-list">
+          <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 220px;"></span></div>
+          <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 220px;"></span></div>
+          <div class="skeleton-row"><span class="skeleton skeleton-inline" style="width: 220px;"></span></div>
+        </div></div>`
+      : `<div class="history-panel">${refreshIndicator}<div class="history-empty">No backup history found</div></div>`;
     return;
   }
 
@@ -1960,8 +1995,7 @@ function renderHistoryListScreen() {
           <div class="history-item-time">${escapeHtml(timeLine)}</div>
         </div>
         <div class="history-row-actions">
-          <button type="button" class="btn history-view-btn" onclick="viewHistoryEntry('${escapeHtml(v.oid)}')">View</button>
-          <button type="button" class="btn history-full-view-btn" onclick="openHistoryFullView('${escapeHtml(v.oid)}', ${num})">Full View</button>
+          <button type="button" class="btn history-full-view-btn" onclick="openHistoryFullView('${escapeHtml(v.oid)}', ${num})">View</button>
         </div>
       </div>
     `;
@@ -1971,6 +2005,7 @@ function renderHistoryListScreen() {
   const count = selected.length;
   slot.innerHTML = `
     <div class="history-panel">
+      ${refreshIndicator}
       <div class="history-list">${itemsHtml}</div>
       <div class="history-compare-bar">
         <span class="history-compare-count">${count} backup${count === 1 ? "" : "s"} selected</span>
@@ -2005,69 +2040,11 @@ function onHistoryCheckboxChange(checkbox) {
   } else {
     historyState.selected = historyState.selected.filter((s) => s.oid !== oid);
   }
+  historyCache[historyState.nodeName] = {
+    data: historyState.data.slice(),
+    selected: historyState.selected.slice(),
+  };
   renderHistoryListScreen();
-}
-
-// View = a single backup's full detail, replacing the list in the same
-// Action/Detail area (never a modal/popup).
-function viewHistoryEntry(oid) {
-  if (!historyState) return;
-  const slot = document.querySelector(
-    "#action-detail-panel .action-panel-slot",
-  );
-  if (!slot) return;
-  const entry = (historyState.data || []).find((v) => v.oid === oid);
-  const num =
-    entry != null
-      ? historyState.data.length - historyState.data.indexOf(entry)
-      : "";
-  const { dateKey, timeLine, epochSecs } = formatHistoryDateParts(
-    entry ? entry.time || entry.date || "" : "",
-  );
-
-  slot.innerHTML = `
-    <div class="history-detail">
-    <button type="button" class="btn history-back-btn" onclick="renderHistoryListScreen()"><span aria-hidden="true">&larr;</span> Back to History</button>
-      <div class="history-detail-title">BACKUP #${num}</div>
-    <div class="history-detail-device">${escapeHtml(historyState.nodeName)}</div>
-    <div class="history-detail-meta">
-      <span>${escapeHtml(dateKey)}</span>
-      <span>${escapeHtml(timeLine)}</span>
-      </div>
-      <div class="history-detail-section-label">Status</div>
-      <div class="history-detail-status" id="history-detail-status">
-        <span class="skeleton skeleton-inline" style="width: 80px;"></span>
-      </div>
-      <div class="history-detail-section-label">Configuration</div>
-      <textarea class="history-detail-config" id="history-detail-config" readonly>Loading…</textarea>
-      <div class="history-detail-actions">
-        <button type="button" class="btn" onclick="copyVersionConfig()">Copy</button>
-        <button type="button" class="btn" onclick="openHistoryFullView('${escapeHtml(oid)}', ${num})">Full View</button>
-      </div>
-    </div>
-  `;
-  window.currentVersionConfig = "";
-
-  fetch(
-    `/api/oxidized/node/${historyState.nodeName}/version?oid=${encodeURIComponent(oid)}&epoch=${encodeURIComponent(epochSecs)}`,
-  )
-    .then((r) => r.json())
-    .then((data) => {
-      if (data.config) {
-        document.getElementById("history-detail-config").value = data.config;
-        document.getElementById("history-detail-status").innerHTML =
-          '<span class="status-text status-success">&#10003; Success</span>';
-        window.currentVersionConfig = data.config;
-      } else {
-        document.getElementById("history-detail-config").value = "";
-        document.getElementById("history-detail-status").innerHTML =
-          '<span class="status-text status-failed">&#10007; Failed to load</span>';
-      }
-    })
-    .catch((err) => {
-      document.getElementById("history-detail-status").innerHTML =
-        `<span class="status-text status-failed">Error: ${escapeHtml(err.message)}</span>`;
-    });
 }
 
 function openHistoryFullView(oid, backupNumber) {
@@ -2170,18 +2147,6 @@ function closeHistoryFullView() {
   if (contentArea) contentArea.classList.remove("compare-open");
 }
 
-function copyVersionConfig() {
-  if (window.currentVersionConfig) {
-    copyTextToClipboard(window.currentVersionConfig)
-      .then(() => {
-        showInfoToast("Version config copied to clipboard");
-      })
-      .catch(() => {
-        showInfoToast("Failed to copy config", true);
-      });
-  }
-}
-
 // Compare reuses the existing diff logic untouched — showDiff()/renderSplitDiff()/
 // diffModal stay as they are; only where the result renders moved (Right Panel).
 // This just feeds it the 2 selected backups.
@@ -2281,10 +2246,11 @@ function syncScroll(source, targetId) {
 }
 
 const diffJumpIndexes = { added: 0, removed: 0, modified: 0 };
+const diffJumpTargets = { added: [], removed: [], modified: [] };
 
-function renderDiffLine(lineNumber, content, kind, isSpacer) {
+function renderDiffLine(lineNumber, content, kind, isSpacer, index) {
   const cellClass = isSpacer ? "diff-line-cell diff-spacer" : `diff-line-cell diff-cell-${kind}`;
-  return `<div class="diff-line-row" data-diff-kind="${kind}">
+  return `<div class="diff-line-row" data-diff-kind="${kind}" data-diff-index="${index}">
     <span class="diff-line-number">${lineNumber || ""}</span>
     <span class="${cellClass}">${isSpacer ? "" : escapeHtml(content || "")}</span>
   </div>`;
@@ -2298,42 +2264,58 @@ function renderDiffStats(stats) {
   const html =
     `<span class="diff-stat diff-stat-same">${same} same</span>` +
     (added > 0
-      ? `<button type="button" class="diff-stat diff-stat-added" onclick="jumpToDiffChange('added')">+${added}</button>`
+      ? `<button type="button" class="diff-stat diff-stat-added" data-diff-jump="added">+${added}</button>`
       : "") +
     (removed > 0
-      ? `<button type="button" class="diff-stat diff-stat-removed" onclick="jumpToDiffChange('removed')">-${removed}</button>`
+      ? `<button type="button" class="diff-stat diff-stat-removed" data-diff-jump="removed">-${removed}</button>`
       : "") +
     (changed > 0
-      ? `<button type="button" class="diff-stat diff-stat-modified" onclick="jumpToDiffChange('modified')">~${changed}</button>`
+      ? `<button type="button" class="diff-stat diff-stat-modified" data-diff-jump="modified">~${changed}</button>`
       : "");
   document.getElementById("diff-old-count").innerHTML = html;
   document.getElementById("diff-new-count").innerHTML = html;
 }
+
+document.addEventListener("click", (event) => {
+  const target = event.target;
+  const badge = target && target.closest
+    ? target.closest("[data-diff-jump]")
+    : null;
+  if (badge) jumpToDiffChange(badge.dataset.diffJump);
+});
 
 function renderSplitDiff(lines, stats) {
   let oldHtml = "";
   let newHtml = "";
   Object.keys(diffJumpIndexes).forEach((key) => {
     diffJumpIndexes[key] = 0;
+    diffJumpTargets[key] = [];
   });
 
-  (lines || []).forEach((line) => {
+  let previousKind = "same";
+  (lines || []).forEach((line, index) => {
     let kind = "same";
     if (line.type === "insert") kind = "added";
     else if (line.type === "delete") kind = "removed";
     else if (line.type === "modified") kind = "modified";
+    if (kind !== "same" && kind !== previousKind) {
+      diffJumpTargets[kind].push(index);
+    }
+    previousKind = kind;
 
     oldHtml += renderDiffLine(
       line.old_line,
       line.old_content,
       kind,
       line.old_line == null,
+      index,
     );
     newHtml += renderDiffLine(
       line.new_line,
       line.new_content,
       kind,
       line.new_line == null,
+      index,
     );
   });
 
@@ -2347,28 +2329,18 @@ function renderSplitDiff(lines, stats) {
 function jumpToDiffChange(kind) {
   const oldPane = document.getElementById("diff-old-content");
   const newPane = document.getElementById("diff-new-content");
-  if (!oldPane || !newPane) return;
-  const oldRows = Array.from(
-    oldPane.querySelectorAll(`.diff-line-row[data-diff-kind="${kind}"]`),
-  ).filter((row) => {
-    const previous = row.previousElementSibling;
-    return !previous || previous.dataset.diffKind !== kind;
-  });
-  const newRows = Array.from(
-    newPane.querySelectorAll(`.diff-line-row[data-diff-kind="${kind}"]`),
-  ).filter((row) => {
-    const previous = row.previousElementSibling;
-    return !previous || previous.dataset.diffKind !== kind;
-  });
-  if (!oldRows.length || !newRows.length) return;
+  const targets = diffJumpTargets[kind];
+  if (!oldPane || !newPane || !targets || targets.length === 0) return;
 
-  const index = diffJumpIndexes[kind] % oldRows.length;
-  diffJumpIndexes[kind] = index + 1;
-  [oldRows[index], newRows[index]].forEach((row) => {
-    const pane = row.parentElement;
-    const rowTop = row.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+  const targetIndex = targets[diffJumpIndexes[kind] % targets.length];
+  diffJumpIndexes[kind] += 1;
+  [oldPane, newPane].forEach((pane) => {
+    const row = pane.querySelector(
+      `.diff-line-row[data-diff-index="${targetIndex}"]`,
+    );
+    if (!row) return;
     pane.scrollTo({
-      top: rowTop - (pane.clientHeight - row.offsetHeight) / 2,
+      top: Math.max(0, row.offsetTop - pane.clientHeight / 3),
       behavior: "smooth",
     });
     row.classList.add("diff-jump-highlight");
@@ -2464,6 +2436,7 @@ function closeDiffModal() {
 // else needs to change here.
 let schedulerOverrides = [];
 let schedulerBackendWarned = false;
+let schedulePanelRequestId = 0;
 
 const SCHED_LOCAL_GLOBAL_KEY = "oxi_scheduler_global_v1";
 const SCHED_LOCAL_OVERRIDES_KEY = "oxi_scheduler_overrides_v1";
@@ -2705,15 +2678,17 @@ function performGlobalScheduleSave(payload) {
 }
 
 function loadSchedulerOverrides() {
-  schedApiRequest("/api/scheduler/overrides")
+  return schedApiRequest("/api/scheduler/overrides")
     .then((data) => {
       schedulerOverrides = data.overrides || [];
       renderSchedulerOverrides(schedulerOverrides);
+      return schedulerOverrides;
     })
     .catch(() => {
       schedWarnBackendMissingOnce();
       schedulerOverrides = schedGetLocalOverrides();
       renderSchedulerOverrides(schedulerOverrides);
+      return schedulerOverrides;
     });
 }
 
@@ -2866,8 +2841,32 @@ function findScheduleOverrideForTarget(type, target) {
 // of creating a duplicate, if one is already configured.
 function openDeviceOrGroupSchedule(type, target) {
   if (type !== "node" && deviceAccordionActive) renderActionPanelPlaceholder();
-  const existing = findScheduleOverrideForTarget(type, target);
-  openScheduleOverrideModal(existing ? existing.id : null, type, target);
+  const isCurrentPanelNode =
+    type === "node" &&
+    deviceAccordionActive &&
+    currentPanelDevice === target &&
+    activeDeviceAccordionSection === "schedule-backup";
+  const schedulePanel = isCurrentPanelNode
+    ? document.getElementById("device-accordion-schedule-backup")
+    : null;
+  const requestId = ++schedulePanelRequestId;
+  if (schedulePanel) {
+    schedulePanel.innerHTML =
+      '<div class="history-refresh-status" role="status">Loading schedule…</div>';
+  }
+  return loadSchedulerOverrides().then(() => {
+    if (
+      requestId !== schedulePanelRequestId ||
+      (isCurrentPanelNode &&
+        (!deviceAccordionActive ||
+          currentPanelDevice !== target ||
+          activeDeviceAccordionSection !== "schedule-backup"))
+    ) {
+      return;
+    }
+    const existing = findScheduleOverrideForTarget(type, target);
+    openScheduleOverrideModal(existing ? existing.id : null, type, target);
+  });
 }
 
 function openScheduleOverrideModal(id, presetType, presetTarget) {
@@ -3245,7 +3244,10 @@ function doTriggerBackup(nodeName) {
 }
 
 // ============ Node CRUD ============
+let editNodeLoadSequence = 0;
+
 function openEditModal(name) {
+  const requestId = ++editNodeLoadSequence;
   Promise.all([
     fetch("/api/credentials").then((r) => readApiResponse(r)),
     fetch("/api/models").then((r) => readApiResponse(r)),
@@ -3291,6 +3293,14 @@ function openEditModal(name) {
       );
     })
     .then((node) => {
+      if (
+        requestId !== editNodeLoadSequence ||
+        (deviceAccordionActive &&
+          (currentPanelDevice !== name ||
+            activeDeviceAccordionSection !== "edit-node"))
+      ) {
+        return;
+      }
       document.getElementById("editNodeName").value = node.name;
       document.getElementById("editNodeIp").value = node.ip;
       document.getElementById("editNodeModel").value = node.model;

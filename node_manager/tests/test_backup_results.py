@@ -371,6 +371,27 @@ def test_compare_groups_replacements_as_modified_and_keeps_rows_aligned():
     assert lines[1]["new_content"] == "new setting"
 
 
+def test_compare_classifies_unpaired_replacement_lines_as_additions_and_removals():
+    from routes.oxidized_api import _compare_configurations
+
+    lines, stats = _compare_configurations(
+        "first\nold setting\nold extra\nlast\n",
+        "first\nnew setting\nnew extra\nnewer extra\nlast\n",
+    )
+
+    assert stats["same"] == 2
+    assert stats["changed"] == 2
+    assert stats["added"] == 1
+    assert stats["removed"] == 0
+    assert [line["type"] for line in lines] == [
+        "equal",
+        "modified",
+        "modified",
+        "insert",
+        "equal",
+    ]
+
+
 def test_activity_log_exposes_new_counts_and_parses_legacy_lines(tmp_path, monkeypatch):
     from services import activity_log_service
 
@@ -413,3 +434,68 @@ def test_activity_log_parses_failed_and_no_change_entries(tmp_path, monkeypatch)
     assert entries[1]["added"] is None
     assert entries[1]["removed"] is None
     assert entries[1]["changed"] is None
+
+
+def test_activity_log_backfills_missing_git_backup_and_avoids_nearby_duplicate(
+    test_client_with_auth, monkeypatch, tmp_path
+):
+    node = _create_node()
+    activity_log = tmp_path / "activity.log"
+    monkeypatch.setattr(
+        activity_log_service, "ACTIVITY_LOG_FILE", str(activity_log)
+    )
+    activity_log_service.append_entry(
+        node.name,
+        node.ip,
+        "SUCCESS",
+        timestamp="2026-11-22T00:00:30+00:00",
+    )
+    history = [
+        {"oid": "new-commit", "time": "2026-11-23T00:00:00+00:00"},
+        {"oid": "old-commit", "time": "2026-11-22T00:00:00+00:00"},
+    ]
+    configs = {
+        "new-commit": "hostname edge-router\nnew setting\nextra line\n",
+        "old-commit": "hostname edge-router\nold setting\n",
+    }
+    monkeypatch.setattr(
+        "routes.oxidized_api.get_oxidized_version_history",
+        lambda _name: history,
+    )
+    monkeypatch.setattr(
+        "routes.oxidized_api.get_oxidized_version_config",
+        lambda _name, oid, _epoch=None: configs[oid],
+    )
+
+    response = test_client_with_auth.get("/api/activity-log")
+
+    assert response.status_code == 200
+    entries = response.json["entries"]
+    backfilled = [
+        entry
+        for entry in entries
+        if entry["timestamp"].startswith("2026-11-23")
+    ]
+    assert len(backfilled) == 1
+    assert backfilled[0]["name"] == node.name
+    assert backfilled[0]["status"] == "SUCCESS"
+    assert backfilled[0]["added"] == 1
+    assert backfilled[0]["removed"] == 0
+    assert backfilled[0]["changed"] == 1
+    assert len(activity_log_service.read_entries(limit=20)) == 2
+
+    saved_node = Node.get_by_name(node.name)
+    assert saved_node.last_backup == "2026-11-23T00:00:00+00:00"
+    assert saved_node.last_status == "success"
+
+
+def test_versions_alias_returns_history(test_client_with_auth, monkeypatch):
+    monkeypatch.setattr(
+        "routes.oxidized_api.get_oxidized_version_history",
+        lambda _name: [{"oid": "latest", "time": "2026-11-23T00:00:00Z"}],
+    )
+
+    response = test_client_with_auth.get("/api/oxidized/node/edge-router/versions")
+
+    assert response.status_code == 200
+    assert response.json[0]["oid"] == "latest"

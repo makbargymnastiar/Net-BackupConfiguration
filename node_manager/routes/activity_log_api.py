@@ -62,6 +62,9 @@ def create_activity_log_entry():
 @login_required
 def get_activity_log_entries():
     """Return recent activity-log entries, newest first."""
+    from routes.oxidized_api import sync_git_backup_activity
+
+    sync_git_backup_activity()
     limit = request.args.get("limit", default=200, type=int)
     entries = activity_log_service.read_entries(limit=limit)
     return jsonify({"entries": entries})

@@ -59,6 +59,15 @@
   --space-6: 24px;
   --space-8: 32px;
 }
+.history-refresh-status {
+  flex: 0 0 auto;
+  padding: 5px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.history-refresh-error {
+  color: var(--danger);
+}
 .history-detail-device {
   font-size: 12px;
   color: var(--text-muted);
@@ -755,34 +764,6 @@ body {
   opacity: 0;
   overflow: hidden;
 }
-#device-accordion-load-config {
-  overflow: hidden;
-}
-#device-accordion-load-config .action-panel-slot,
-#device-accordion-load-config #viewConfigModalContent {
-  height: 100%;
-  min-height: 0;
-}
-#device-accordion-load-config #viewConfigModalContent {
-  display: flex;
-  flex-direction: column;
-}
-#device-accordion-load-config #viewConfigModalContent .scroll-400 {
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: none;
-  overflow: hidden;
-}
-#device-accordion-load-config #viewConfigContent {
-  height: 100%;
-  min-height: 0;
-  max-height: none;
-  resize: none;
-  overflow-y: auto;
-}
-#device-accordion-load-config #btn-close-config {
-  display: none;
-}
 .device-accordion-content[hidden] {
   display: none;
 }
@@ -815,8 +796,7 @@ body {
 }
 .right-panel-device-active .action-panel-slot,
 .right-panel-device-active .action-panel-slot > #editModalContent,
-.right-panel-device-active .action-panel-slot > #scheduleOverrideModalContent,
-.right-panel-device-active .action-panel-slot > #viewConfigModalContent {
+.right-panel-device-active .action-panel-slot > #scheduleOverrideModalContent {
   width: 100%;
   max-width: none;
   margin: 0;
@@ -825,20 +805,6 @@ body {
   border: 0;
   border-radius: 0;
   background: transparent;
-}
-.right-panel-device-active #viewConfigModalContent .scroll-400 {
-  max-height: min(42vh, 360px);
-}
-.right-panel-device-active #viewConfigContent {
-  scrollbar-width: thin;
-  scrollbar-color: #94a3b8 transparent;
-}
-.right-panel-device-active #viewConfigContent::-webkit-scrollbar {
-  width: 6px;
-}
-.right-panel-device-active #viewConfigContent::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: #94a3b8;
 }
 .right-panel-device-active .history-detail-config {
   resize: vertical;
@@ -1170,8 +1136,8 @@ button.diff-stat:hover {
 
 .diff-line-row {
     display: flex;
-    width: max-content;
-    min-width: 100%;
+    width: 100%;
+    min-width: 0;
     min-height: 22px;
     scroll-margin: 45%;
 }
@@ -1188,10 +1154,12 @@ button.diff-stat:hover {
 }
 
 .diff-line-cell {
-    flex: 1 0 auto;
+    flex: 1 1 0;
     min-width: 0;
     padding: 0 8px;
-    white-space: pre;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .diff-cell-same {
@@ -3365,9 +3333,11 @@ textarea#cfg-yaml-editor {
     border-radius: 6px;
     overflow: hidden;
     min-height: 0;
+    min-width: 0;
 }
 .diff-pane-old {
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     border-right: 1px solid #ddd;
@@ -3405,13 +3375,16 @@ textarea#cfg-yaml-editor {
 }
 .diff-pane-body {
     flex: 1;
-    overflow: auto;
+    min-width: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
     font-family: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
     font-size: 12px;
     line-height: 1.5;
 }
 .diff-pane-new {
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     background: #fff;

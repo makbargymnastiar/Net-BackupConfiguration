@@ -93,7 +93,9 @@ def _compare_configurations(old_config, new_config):
     """Return SequenceMatcher-aligned lines and edit-aware change counts."""
     old_lines = old_config.splitlines()
     new_lines = new_config.splitlines()
-    matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
+    matcher = difflib.SequenceMatcher(
+        None, old_lines, new_lines, autojunk=False
+    )
     aligned_lines = []
     same = added = removed = changed = 0
     old_line_num = new_line_num = 0
@@ -116,7 +118,10 @@ def _compare_configurations(old_config, new_config):
                     }
                 )
         elif tag == "replace":
-            changed += max(old_count, new_count)
+            paired_count = min(old_count, new_count)
+            changed += paired_count
+            added += new_count - paired_count
+            removed += old_count - paired_count
             for offset in range(max(old_count, new_count)):
                 has_old = offset < old_count
                 has_new = offset < new_count
@@ -126,7 +131,13 @@ def _compare_configurations(old_config, new_config):
                     new_line_num += 1
                 aligned_lines.append(
                     {
-                        "type": "modified",
+                        "type": (
+                            "modified"
+                            if has_old and has_new
+                            else "insert"
+                            if has_new
+                            else "delete"
+                        ),
                         "old_line": old_line_num if has_old else None,
                         "new_line": new_line_num if has_new else None,
                         "old_content": old_lines[i1 + offset] if has_old else "",
@@ -192,6 +203,104 @@ def _latest_backup_diff_stats(node_name):
         "removed": stats["removed"],
         "changed": stats["changed"],
     }
+
+
+def _backup_log_matches(entries, node_name, timestamp):
+    target_epoch = _normalize_epoch(timestamp)
+    if target_epoch is None:
+        return None
+    for entry in entries:
+        if entry.get("name") != node_name or entry.get("message"):
+            continue
+        entry_epoch = _normalize_epoch(entry.get("timestamp"))
+        if entry_epoch is not None and abs(entry_epoch - target_epoch) <= 60:
+            return entry
+    return None
+
+
+def sync_git_backup_activity():
+    """Backfill missing backup log entries from per-node Oxidized Git history."""
+    entries = activity_log_service.read_entries(
+        limit=activity_log_service.MAX_LINES
+    )
+    nodes = Node.get_all()
+    added_entries = []
+    latest_by_node = {}
+
+    for node in nodes:
+        history = get_oxidized_version_history(node.name)
+        if not history:
+            continue
+
+        for index, version in enumerate(history):
+            timestamp = _normalize_backup_time(version.get("time"))
+            if not timestamp:
+                continue
+
+            existing = _backup_log_matches(entries, node.name, timestamp)
+            config = None
+            if not existing:
+                config = get_oxidized_version_config(
+                    node.name,
+                    version.get("oid"),
+                    _normalize_epoch(timestamp),
+                )
+                if not isinstance(config, str):
+                    continue
+
+                is_success = is_valid_oxidized_config(config)
+                diff_stats = {}
+                if is_success:
+                    previous_config = ""
+                    if index + 1 < len(history):
+                        previous = history[index + 1]
+                        previous_config = get_oxidized_version_config(
+                            node.name,
+                            previous.get("oid"),
+                            _normalize_epoch(previous.get("time")),
+                        )
+                    if isinstance(previous_config, str):
+                        _, diff = _compare_configurations(previous_config, config)
+                        diff_stats = {
+                            "added": diff["added"],
+                            "removed": diff["removed"],
+                            "changed": diff["changed"],
+                        }
+
+                entry = activity_log_service.append_entry(
+                    node.name,
+                    node.ip,
+                    "SUCCESS" if is_success else "FAILED",
+                    insert=diff_stats.get("added"),
+                    delete=diff_stats.get("removed"),
+                    changed=diff_stats.get("changed"),
+                    timestamp=timestamp,
+                )
+                entries.insert(0, entry)
+                added_entries.append(entry)
+                existing = entry
+
+            latest = latest_by_node.get(node.name)
+            if latest is None:
+                latest_by_node[node.name] = (timestamp, existing)
+            elif (_normalize_epoch(timestamp) or 0) > (_normalize_epoch(latest[0]) or 0):
+                latest_by_node[node.name] = (timestamp, existing)
+
+    for node in nodes:
+        latest = latest_by_node.get(node.name)
+        if not latest:
+            continue
+        timestamp, entry = latest
+        stored_epoch = _normalize_epoch(node.last_backup) or 0
+        if (_normalize_epoch(timestamp) or 0) <= stored_epoch:
+            continue
+        node.last_backup = timestamp
+        node.last_status = (
+            "success" if entry.get("status") == "SUCCESS" else "failed"
+        )
+        node.save()
+
+    return added_entries
 
 
 def _record_scheduled_backup_results(status_data):
@@ -415,8 +524,9 @@ def oxidized_node_config(node_name):
 
 
 @oxidized_api_bp.route("/api/oxidized/node/<node_name>/history", methods=["GET"])
+@oxidized_api_bp.route("/api/oxidized/node/<node_name>/versions", methods=["GET"])
 def oxidized_node_history(node_name):
-    """Get node version history."""
+    """Get node version history (history and versions route aliases)."""
     history = get_oxidized_version_history(node_name)
     return jsonify(history)
 

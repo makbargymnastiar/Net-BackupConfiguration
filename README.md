@@ -23,6 +23,8 @@
 | Backup History 和 Compare 现按组仓库中的精确 Git commit 读取配置，并等待备份 commit 完成；配置滚动条仅显示在文本框内。 | Backup History and Compare now read configs by exact Git commit from each group repository and wait for backup commits to complete; scrollbars are confined to the config text areas. |
 | Activity Log 单独统计修改行；Compare 徽章可循环跳转到变更；右侧设备管理采用单开折叠面板，并与 Activity Log 互斥显示。 | Activity Log counts modified lines separately; Compare badges cycle through changes; right-side device management uses a single-open accordion and replaces the Activity Log while active. |
 | 手动备份等待 Oxidized 最终完成时间和状态（最多 30 秒）；编辑节点会验证端口、同步 nodes.csv 并反馈 reload 结果；设备管理面板默认关闭所有 accordion。 | Manual backups wait for Oxidized's final completion time and status (up to 30 seconds); node edits validate the port, sync nodes.csv, and report reload results; device-panel accordions start collapsed. |
+| Activity Log 会从 Oxidized 组 Git 历史补齐遗漏的定时备份，按设备和 60 秒窗口去重并保留提交时间及变更统计；右侧设备面板移除 Load Config 项，Backup History 的 View 在主内容区打开完整配置。 | Activity Log backfills missed scheduled backups from Oxidized group Git history, deduplicates by device within 60 seconds, and preserves commit times and change counts; the right-side device panel removes Load Config, and Backup History's View opens the full config in the main content area. |
+| Compare 将 replace 块中的配对行准确统计为修改，额外行统计为新增/删除；变更徽章可循环跳转至两侧对应位置。 | Compare accurately counts paired lines in replace blocks as modified and extra lines as added/removed; change badges cycle through matching positions in both panes. |
 
 ### v1.2.0 (2026-04-21) ⚠️ 重大升级 / ⚠️ MAJOR UPGRADE
 

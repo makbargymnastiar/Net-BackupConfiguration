@@ -12,6 +12,8 @@ Network device configuration backup management system, built on Oxidized, provid
 - Backup History and Compare now read configs by exact Git commit from each group repository and wait for backup commits to complete; scrollbars are confined to the config text areas.
 - Activity Log counts modified lines separately; Compare badges cycle through changes; right-side device management uses a single-open accordion and replaces the Activity Log while active.
 - Manual backups wait for Oxidized's final completion time and status (up to 30 seconds); node edits validate the port, sync nodes.csv, and report reload results; device-panel accordions start collapsed.
+- Activity Log backfills missed scheduled backups from Oxidized group Git history, deduplicates by device within 60 seconds, and preserves commit times and change counts; the right-side device panel removes Load Config, and Backup History's View opens the full config in the main content area.
+- Compare accurately counts paired lines in replace blocks as modified and extra lines as added/removed; change badges cycle through matching positions in both panes.
 
 ### v1.2.0 (2026-04-21) ⚠️ MAJOR UPGRADE
 
