@@ -651,8 +651,15 @@ body {
   min-height: 0;
   border-bottom: 0;
 }
-.right-panel.right-panel-device-active .right-panel-activity {
+.right-panel.right-panel-full-action .right-panel-action {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-bottom: 0;
+}
+.right-panel.right-panel-device-active .right-panel-activity,
+.right-panel.right-panel-full-action .right-panel-activity {
   display: none;
+  flex: 0 0 0;
 }
 .right-panel-device-active .right-panel-section-body {
   display: flex;
@@ -761,10 +768,15 @@ body {
   max-height: 0;
   padding-top: 0;
   padding-bottom: 0;
+  flex: none;
   opacity: 0;
   overflow: hidden;
 }
 .device-accordion-content[hidden] {
+  display: none;
+}
+.right-panel-device-active #btn-cancel,
+.right-panel-device-active #sched-override-cancel {
   display: none;
 }
 .device-accordion-footer {

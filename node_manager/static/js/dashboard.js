@@ -498,8 +498,8 @@ window.addEventListener("resize", () => {
 // Schedule Backup, Delete) to the permanent Right Panel instead of opening
 // them as modal popups. This reuses each action's existing handler/markup
 // as-is — only *where* the result is shown changes (Right Panel instead of
-// a centered modal). Activity Log (the panel's bottom section) is never
-// touched by any of this.
+// a centered modal). Device management and Backup History use the full panel,
+// temporarily hiding Activity Log until the panel is closed.
 const ACTION_DETAIL_PANEL_DEFAULT_HTML = `
   <div class="right-panel-placeholder">
     <svg class="right-panel-placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -637,11 +637,9 @@ function toggleDeviceAccordion(section) {
     if (isOpen) {
       content.hidden = false;
       content.classList.remove("closing");
-    } else if (!content.hidden) {
-      content.classList.add("closing");
-      content._accordionCloseTimer = setTimeout(() => {
-        if (content.classList.contains("closing")) content.hidden = true;
-      }, 160);
+    } else {
+      content.classList.remove("closing");
+      content.hidden = true;
     }
   });
   activeDeviceAccordionSection = wasOpen ? null : section;
@@ -676,6 +674,7 @@ function renderActionPanelPlaceholder() {
     panelEl.classList.remove("right-panel-diff");
     panelEl.classList.remove("right-panel-compact-action");
     panelEl.classList.remove("right-panel-device-active");
+    panelEl.classList.remove("right-panel-full-action");
   }
   const wasDevicePanel = deviceAccordionActive;
   deviceAccordionActive = false;
@@ -802,11 +801,15 @@ function setActionPanelContext(deviceName, actionLabel) {
 
   // Short-content actions (schedule, add/edit group) let the Activity Log grow.
   const panel = document.querySelector(".right-panel");
-  if (panel)
+  if (panel) {
+    if (actionLabel !== "Backup History") {
+      panel.classList.remove("right-panel-full-action");
+    }
     panel.classList.toggle(
       "right-panel-compact-action",
       COMPACT_ACTION_LABELS.has(actionLabel),
     );
+  }
 
   panelBody.classList.remove("panel-split-mode");
   panelBody.classList.toggle("panel-config-mode", actionLabel === "Load Config");
@@ -1847,6 +1850,8 @@ function viewVersionHistory(nodeName) {
   const slot = setActionPanelContext(nodeName, "Backup History");
   actionPanelCurrentModal = null; // History now renders directly in the panel, no modal borrowed
   if (!slot) return;
+  const rightPanel = document.querySelector(".right-panel");
+  if (rightPanel) rightPanel.classList.add("right-panel-full-action");
   const cached = historyCache[nodeName];
   historyState = {
     nodeName,
@@ -2231,9 +2236,11 @@ function showDiff(nodeName, oid1, oid2, epoch1, epoch2, oldLabel, newLabel) {
 }
 
 let diffScrollSyncing = false;
+let isProgrammaticScroll = false;
+let diffProgrammaticScrollTimer = null;
 
 function syncScroll(source, targetId) {
-  if (diffScrollSyncing) return;
+  if (diffScrollSyncing || isProgrammaticScroll) return;
   diffScrollSyncing = true;
   const target = document.getElementById(targetId);
   if (target) {
@@ -2334,15 +2341,28 @@ function jumpToDiffChange(kind) {
 
   const targetIndex = targets[diffJumpIndexes[kind] % targets.length];
   diffJumpIndexes[kind] += 1;
+  const oldRow = oldPane.querySelector(
+    `.diff-line-row[data-diff-index="${targetIndex}"]`,
+  );
+  if (!oldRow) return;
+
+  const targetScrollTop =
+    oldPane.scrollTop +
+    (oldRow.getBoundingClientRect().top -
+      oldPane.getBoundingClientRect().top) -
+    oldPane.clientHeight / 3;
+  isProgrammaticScroll = true;
+  clearTimeout(diffProgrammaticScrollTimer);
+  diffProgrammaticScrollTimer = setTimeout(() => {
+    isProgrammaticScroll = false;
+  }, 1500);
+
   [oldPane, newPane].forEach((pane) => {
     const row = pane.querySelector(
       `.diff-line-row[data-diff-index="${targetIndex}"]`,
     );
     if (!row) return;
-    pane.scrollTo({
-      top: Math.max(0, row.offsetTop - pane.clientHeight / 3),
-      behavior: "smooth",
-    });
+    pane.scrollTo({ top: Math.max(0, targetScrollTop), behavior: "smooth" });
     row.classList.add("diff-jump-highlight");
     clearTimeout(row._diffHighlightTimer);
     row._diffHighlightTimer = setTimeout(
