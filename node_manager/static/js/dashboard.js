@@ -2230,7 +2230,7 @@ function showDiff(nodeName, oid1, oid2, epoch1, epoch2, oldLabel, newLabel) {
       if (Array.isArray(data.aligned_lines)) {
         window.diffData = data.aligned_lines;
         window.diffStats = data.stats;
-        renderSplitDiff(data.aligned_lines, data.stats);
+        renderSplitDiff(data.aligned_lines);
       } else {
         document.getElementById("diff-old-content").innerHTML =
           '<div style="padding: 20px; color: #666;">No differences found.</div>';
@@ -2280,10 +2280,10 @@ function renderDiffLine(lineNumber, content, kind, isSpacer, index) {
   </div>`;
 }
 
-function renderDiffStats(stats) {
-  const added = stats.added ?? stats.insert ?? 0;
-  const removed = stats.removed ?? stats.delete ?? 0;
-  const changed = stats.changed ?? 0;
+function renderDiffStats() {
+  const added = diffJumpTargets.added.length;
+  const removed = diffJumpTargets.removed.length;
+  const changed = diffJumpTargets.modified.length;
   diffSummaryCounts.added = added;
   diffSummaryCounts.removed = removed;
   diffSummaryCounts.modified = changed;
@@ -2331,7 +2331,7 @@ document.addEventListener("click", (event) => {
   if (badge) jumpToDiffChange(badge.dataset.diffJump);
 });
 
-function renderSplitDiff(lines, stats) {
+function renderSplitDiff(lines) {
   let oldHtml = "";
   let newHtml = "";
   diffActiveTarget = null;
@@ -2340,28 +2340,13 @@ function renderSplitDiff(lines, stats) {
     diffJumpTargets[key] = [];
   });
 
-  let openHunkKind = null;
-  let openHunk = null;
-  const closeHunk = (index) => {
-    if (openHunk && index > openHunk.start) {
-      diffJumpTargets[openHunkKind].push(openHunk);
-    }
-    openHunk = null;
-    openHunkKind = null;
-  };
   (lines || []).forEach((line, index) => {
     let kind = "same";
     if (line.type === "insert") kind = "added";
     else if (line.type === "delete") kind = "removed";
     else if (line.type === "modified") kind = "modified";
-    if (kind !== openHunkKind) {
-      closeHunk(index);
-      if (kind !== "same") {
-        openHunkKind = kind;
-        openHunk = { start: index, end: index + 1 };
-      }
-    } else if (openHunk) {
-      openHunk.end = index + 1;
+    if (kind !== "same") {
+      diffJumpTargets[kind].push({ start: index, end: index + 1 });
     }
 
     oldHtml += renderDiffLine(
@@ -2379,13 +2364,11 @@ function renderSplitDiff(lines, stats) {
       index,
     );
   });
-  closeHunk((lines || []).length);
-
   document.getElementById("diff-old-content").innerHTML =
     oldHtml || '<div class="diff-empty">No content</div>';
   document.getElementById("diff-new-content").innerHTML =
     newHtml || '<div class="diff-empty">No content</div>';
-  if (stats) renderDiffStats(stats);
+  renderDiffStats();
 }
 
 function jumpToDiffChange(kind) {
@@ -2399,34 +2382,32 @@ function jumpToDiffChange(kind) {
   const targetIndex = target.start;
   const panes = [oldPane, newPane];
   const targetPositions = panes.map((pane) => {
-    const row = pane.querySelector(
+    const targetCell = pane.querySelector(
       `.diff-line-row[data-diff-index="${targetIndex}"]`,
     );
-    if (!row) return null;
-    return Math.max(
-      0,
+    if (!targetCell) return null;
+    const maxScroll = pane.scrollHeight - pane.clientHeight;
+    const rawTarget =
       pane.scrollTop +
-        (row.getBoundingClientRect().top -
-          pane.getBoundingClientRect().top) -
-        pane.clientHeight / 3,
-    );
+      (targetCell.getBoundingClientRect().top -
+        pane.getBoundingClientRect().top) -
+      pane.clientHeight / 3;
+    return Math.max(0, Math.min(maxScroll, rawTarget));
   });
   if (targetPositions.some((position) => position === null)) return;
 
   clearDiffJumpCells();
-  for (let index = target.start; index < target.end; index += 1) {
-    const oldCell = oldPane.querySelector(
-      `.diff-line-row[data-diff-index="${index}"] .diff-line-cell:not(.diff-spacer)`,
-    );
-    const newCell = newPane.querySelector(
-      `.diff-line-row[data-diff-index="${index}"] .diff-line-cell:not(.diff-spacer)`,
-    );
-    if (kind !== "added" && oldCell) {
-      oldCell.classList.add(`diff-jump-active-${kind}`, "diff-jump-active-cell");
-    }
-    if (kind !== "removed" && newCell) {
-      newCell.classList.add(`diff-jump-active-${kind}`, "diff-jump-active-cell");
-    }
+  const oldCell = oldPane.querySelector(
+    `.diff-line-row[data-diff-index="${targetIndex}"] .diff-line-cell:not(.diff-spacer)`,
+  );
+  const newCell = newPane.querySelector(
+    `.diff-line-row[data-diff-index="${targetIndex}"] .diff-line-cell:not(.diff-spacer)`,
+  );
+  if (kind !== "added" && oldCell) {
+    oldCell.classList.add(`diff-jump-active-${kind}`, "diff-jump-active-cell");
+  }
+  if (kind !== "removed" && newCell) {
+    newCell.classList.add(`diff-jump-active-${kind}`, "diff-jump-active-cell");
   }
   diffActiveTarget = { kind, start: target.start };
   updateDiffJumpBadgeLabels();
@@ -2435,7 +2416,7 @@ function jumpToDiffChange(kind) {
   clearTimeout(diffProgrammaticScrollTimer);
   diffProgrammaticScrollTimer = setTimeout(() => {
     isProgrammaticScroll = false;
-  }, 1200);
+  }, 650);
 
   panes.forEach((pane, index) => {
     pane.scrollTo({ top: targetPositions[index], behavior: "smooth" });
