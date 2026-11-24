@@ -15,6 +15,7 @@ Network device configuration backup management system, built on Oxidized, provid
 - Activity Log backfills missed scheduled backups from Oxidized group Git history, deduplicates by device within 60 seconds, and preserves commit times and change counts; the right-side device panel removes Load Config, and Backup History's View opens the full config in the main content area.
 - Compare accurately counts paired lines in replace blocks as modified and extra lines as added/removed; change badges cycle through matching positions in both panes.
 - Compare jumps use pane-relative coordinates and prevent scroll synchronization from interrupting animation; device/history views fill the right panel and hide Activity Log, accordions collapse immediately, and edit/schedule forms keep only Save.
+- Compare OLD/NEW headers show side-specific change counts; badge clicks cycle through hunks and keep the active hunk marked, and closing the right panel closes the center viewer/compare. Settings includes a Notifications Beta preview; delivery channels are still Coming Soon.
 
 ### v1.2.0 (2026-04-21) ⚠️ MAJOR UPGRADE
 

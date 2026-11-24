@@ -655,6 +655,15 @@ function toggleDeviceAccordion(section) {
 // just Activity Log (which then naturally fills the whole panel, since it's
 // the only flex child left — see .right-panel-action-hidden in the CSS).
 function renderActionPanelPlaceholder() {
+  const contentOverlay = document.getElementById("compareViewContainer");
+  if (contentOverlay && contentOverlay.classList.contains("show")) {
+    if (contentOverlay.querySelector("#diffModalContent")) {
+      closeDiffModal();
+    } else if (contentOverlay.querySelector("#full-view-config")) {
+      closeHistoryFullView();
+    }
+  }
+
   // If a modal's content is currently on loan to the panel, give it back to
   // its own modal so that modal still works normally if opened another way.
   // Found by its own stable id (not modal.querySelector(".modal-content")),
@@ -754,7 +763,11 @@ function setActionPanelContext(deviceName, actionLabel) {
       const isOpen = item.dataset.deviceSection === activeDeviceAccordionSection;
       item.classList.toggle("open", isOpen);
       const content = item.querySelector(".device-accordion-content");
-      if (content) content.hidden = !isOpen;
+      if (content) {
+        content.classList.remove("closing");
+        content.hidden = !isOpen;
+        content.style.removeProperty("display");
+      }
     });
     const body = document.getElementById(
       `device-accordion-${activeDeviceAccordionSection}`,
@@ -2150,6 +2163,8 @@ function closeHistoryFullView() {
   }
   const contentArea = document.querySelector(".content");
   if (contentArea) contentArea.classList.remove("compare-open");
+  window.currentVersionConfig = "";
+  clearDiffJumpHighlight();
 }
 
 // Compare reuses the existing diff logic untouched — showDiff()/renderSplitDiff()/
@@ -2254,6 +2269,8 @@ function syncScroll(source, targetId) {
 
 const diffJumpIndexes = { added: 0, removed: 0, modified: 0 };
 const diffJumpTargets = { added: [], removed: [], modified: [] };
+const diffSummaryCounts = { added: 0, removed: 0, modified: 0 };
+let diffActiveTarget = null;
 
 function renderDiffLine(lineNumber, content, kind, isSpacer, index) {
   const cellClass = isSpacer ? "diff-line-cell diff-spacer" : `diff-line-cell diff-cell-${kind}`;
@@ -2264,23 +2281,46 @@ function renderDiffLine(lineNumber, content, kind, isSpacer, index) {
 }
 
 function renderDiffStats(stats) {
-  const same = stats.same ?? stats.equal ?? 0;
   const added = stats.added ?? stats.insert ?? 0;
   const removed = stats.removed ?? stats.delete ?? 0;
   const changed = stats.changed ?? 0;
-  const html =
-    `<span class="diff-stat diff-stat-same">${same} same</span>` +
-    (added > 0
-      ? `<button type="button" class="diff-stat diff-stat-added" data-diff-jump="added">+${added}</button>`
-      : "") +
-    (removed > 0
-      ? `<button type="button" class="diff-stat diff-stat-removed" data-diff-jump="removed">-${removed}</button>`
-      : "") +
-    (changed > 0
-      ? `<button type="button" class="diff-stat diff-stat-modified" data-diff-jump="modified">~${changed}</button>`
-      : "");
-  document.getElementById("diff-old-count").innerHTML = html;
-  document.getElementById("diff-new-count").innerHTML = html;
+  diffSummaryCounts.added = added;
+  diffSummaryCounts.removed = removed;
+  diffSummaryCounts.modified = changed;
+  const noDifferences = changed === 0 && added === 0 && removed === 0;
+  const badge = (kind, className) => {
+    const count = diffSummaryCounts[kind];
+    if (count <= 0) return "";
+    return `<button type="button" class="diff-stat ${className}" data-diff-jump="${kind}"></button>`;
+  };
+  const noDiffLabel = '<span class="diff-no-differences">No differences</span>';
+  const oldHeader =
+    (noDifferences ? noDiffLabel : "") +
+    badge("modified", "diff-stat-modified") +
+    badge("removed", "diff-stat-removed");
+  const newHeader =
+    (noDifferences ? noDiffLabel : "") +
+    badge("modified", "diff-stat-modified") +
+    badge("added", "diff-stat-added");
+  document.getElementById("diff-old-count").innerHTML = oldHeader;
+  document.getElementById("diff-new-count").innerHTML = newHeader;
+  updateDiffJumpBadgeLabels();
+}
+
+function updateDiffJumpBadgeLabels() {
+  document.querySelectorAll("[data-diff-jump]").forEach((badge) => {
+    const kind = badge.dataset.diffJump;
+    const symbol = kind === "modified" ? "~" : kind === "added" ? "+" : "-";
+    const targets = diffJumpTargets[kind];
+    const activeIndex =
+      diffActiveTarget && kind === diffActiveTarget.kind
+        ? targets.findIndex((target) => target.start === diffActiveTarget.start)
+        : -1;
+    badge.textContent =
+      activeIndex >= 0
+        ? `${symbol} ${activeIndex + 1}/${targets.length}`
+        : `${symbol} ${diffSummaryCounts[kind]}`;
+  });
 }
 
 document.addEventListener("click", (event) => {
@@ -2294,21 +2334,35 @@ document.addEventListener("click", (event) => {
 function renderSplitDiff(lines, stats) {
   let oldHtml = "";
   let newHtml = "";
+  diffActiveTarget = null;
   Object.keys(diffJumpIndexes).forEach((key) => {
     diffJumpIndexes[key] = 0;
     diffJumpTargets[key] = [];
   });
 
-  let previousKind = "same";
+  let openHunkKind = null;
+  let openHunk = null;
+  const closeHunk = (index) => {
+    if (openHunk && index > openHunk.start) {
+      diffJumpTargets[openHunkKind].push(openHunk);
+    }
+    openHunk = null;
+    openHunkKind = null;
+  };
   (lines || []).forEach((line, index) => {
     let kind = "same";
     if (line.type === "insert") kind = "added";
     else if (line.type === "delete") kind = "removed";
     else if (line.type === "modified") kind = "modified";
-    if (kind !== "same" && kind !== previousKind) {
-      diffJumpTargets[kind].push(index);
+    if (kind !== openHunkKind) {
+      closeHunk(index);
+      if (kind !== "same") {
+        openHunkKind = kind;
+        openHunk = { start: index, end: index + 1 };
+      }
+    } else if (openHunk) {
+      openHunk.end = index + 1;
     }
-    previousKind = kind;
 
     oldHtml += renderDiffLine(
       line.old_line,
@@ -2325,6 +2379,7 @@ function renderSplitDiff(lines, stats) {
       index,
     );
   });
+  closeHunk((lines || []).length);
 
   document.getElementById("diff-old-content").innerHTML =
     oldHtml || '<div class="diff-empty">No content</div>';
@@ -2339,36 +2394,75 @@ function jumpToDiffChange(kind) {
   const targets = diffJumpTargets[kind];
   if (!oldPane || !newPane || !targets || targets.length === 0) return;
 
-  const targetIndex = targets[diffJumpIndexes[kind] % targets.length];
+  const target = targets[diffJumpIndexes[kind] % targets.length];
   diffJumpIndexes[kind] += 1;
-  const oldRow = oldPane.querySelector(
-    `.diff-line-row[data-diff-index="${targetIndex}"]`,
-  );
-  if (!oldRow) return;
+  const targetIndex = target.start;
+  const panes = [oldPane, newPane];
+  const targetPositions = panes.map((pane) => {
+    const row = pane.querySelector(
+      `.diff-line-row[data-diff-index="${targetIndex}"]`,
+    );
+    if (!row) return null;
+    return Math.max(
+      0,
+      pane.scrollTop +
+        (row.getBoundingClientRect().top -
+          pane.getBoundingClientRect().top) -
+        pane.clientHeight / 3,
+    );
+  });
+  if (targetPositions.some((position) => position === null)) return;
 
-  const targetScrollTop =
-    oldPane.scrollTop +
-    (oldRow.getBoundingClientRect().top -
-      oldPane.getBoundingClientRect().top) -
-    oldPane.clientHeight / 3;
+  clearDiffJumpCells();
+  for (let index = target.start; index < target.end; index += 1) {
+    const oldCell = oldPane.querySelector(
+      `.diff-line-row[data-diff-index="${index}"] .diff-line-cell:not(.diff-spacer)`,
+    );
+    const newCell = newPane.querySelector(
+      `.diff-line-row[data-diff-index="${index}"] .diff-line-cell:not(.diff-spacer)`,
+    );
+    if (kind !== "added" && oldCell) {
+      oldCell.classList.add(`diff-jump-active-${kind}`, "diff-jump-active-cell");
+    }
+    if (kind !== "removed" && newCell) {
+      newCell.classList.add(`diff-jump-active-${kind}`, "diff-jump-active-cell");
+    }
+  }
+  diffActiveTarget = { kind, start: target.start };
+  updateDiffJumpBadgeLabels();
+
   isProgrammaticScroll = true;
   clearTimeout(diffProgrammaticScrollTimer);
   diffProgrammaticScrollTimer = setTimeout(() => {
     isProgrammaticScroll = false;
-  }, 1500);
+  }, 1200);
 
-  [oldPane, newPane].forEach((pane) => {
-    const row = pane.querySelector(
-      `.diff-line-row[data-diff-index="${targetIndex}"]`,
+  panes.forEach((pane, index) => {
+    pane.scrollTo({ top: targetPositions[index], behavior: "smooth" });
+  });
+}
+
+function clearDiffJumpCells() {
+  document
+    .querySelectorAll(".diff-jump-active-cell")
+    .forEach((cell) =>
+      cell.classList.remove(
+        "diff-jump-active-cell",
+        "diff-jump-active-added",
+        "diff-jump-active-removed",
+        "diff-jump-active-modified",
+      ),
     );
-    if (!row) return;
-    pane.scrollTo({ top: Math.max(0, targetScrollTop), behavior: "smooth" });
-    row.classList.add("diff-jump-highlight");
-    clearTimeout(row._diffHighlightTimer);
-    row._diffHighlightTimer = setTimeout(
-      () => row.classList.remove("diff-jump-highlight"),
-      1400,
-    );
+}
+
+function clearDiffJumpHighlight() {
+  clearTimeout(diffProgrammaticScrollTimer);
+  diffProgrammaticScrollTimer = null;
+  isProgrammaticScroll = false;
+  clearDiffJumpCells();
+  diffActiveTarget = null;
+  Object.keys(diffJumpIndexes).forEach((kind) => {
+    diffJumpIndexes[kind] = 0;
   });
 }
 
@@ -2870,9 +2964,12 @@ function openDeviceOrGroupSchedule(type, target) {
     ? document.getElementById("device-accordion-schedule-backup")
     : null;
   const requestId = ++schedulePanelRequestId;
-  if (schedulePanel) {
-    schedulePanel.innerHTML =
-      '<div class="history-refresh-status" role="status">Loading schedule…</div>';
+  if (isCurrentPanelNode && schedulePanel) {
+    schedulePanel.hidden = false;
+    schedulePanel.classList.remove("closing");
+    schedulePanel.style.removeProperty("display");
+    const existing = findScheduleOverrideForTarget(type, target);
+    openScheduleOverrideModal(existing ? existing.id : null, type, target);
   }
   return loadSchedulerOverrides().then(() => {
     if (

@@ -307,6 +307,18 @@
                     </svg>
                     <span id="tab-users-label">Users</span>
                   </button>
+                  <button
+                    class="tab sidebar-subitem notification-nav-item"
+                    onclick="switchTab('notifications', event)"
+                    id="tab-notifications"
+                  >
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+                      <path d="M10 21h4" />
+                    </svg>
+                    <span id="tab-notifications-label">Notifications</span>
+                    <span class="notification-beta-badge">Beta</span>
+                  </button>
                 </div>
               </div>
           </div>
@@ -1297,6 +1309,57 @@
                   </div>
                 </form>
               </div>
+            </div>
+
+            <div id="notifications" class="tab-content">
+              <section class="notification-coming-soon">
+                <div class="notification-coming-soon-heading">
+                  <span class="notification-coming-soon-icon" aria-hidden="true">
+                    <svg class="icon" viewBox="0 0 24 24">
+                      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+                      <path d="M10 21h4" />
+                    </svg>
+                  </span>
+                  <div>
+                    <span class="notification-beta-badge">Beta · Coming Soon</span>
+                    <h2 class="tab-header-title">Notifications — Coming Soon</h2>
+                    <p class="sublabel">
+                      Send real-time backup reports and alerts to your team's
+                      communication channels whenever a manual or scheduled
+                      device backup finishes.
+                    </p>
+                  </div>
+                </div>
+                <div class="notification-purpose">
+                  <h3>Planned operational benefits</h3>
+                  <ol>
+                    <li>
+                      <strong>Automatic backup status monitoring</strong>
+                      <span>See Backup Completed and Backup Failed results immediately without constantly checking the dashboard.</span>
+                    </li>
+                    <li>
+                      <strong>Configuration change alerts</strong>
+                      <span>Get notified when configuration lines are added (+), removed (-), or changed (~), supporting network-change audits.</span>
+                    </li>
+                    <li>
+                      <strong>Simple multi-channel integration</strong>
+                      <span>Connect with a Slack Webhook URL, Telegram Bot Token and Chat ID, or Email via SMTP.</span>
+                    </li>
+                  </ol>
+                </div>
+                <div class="notification-channels">
+                  <span class="notification-channel notification-channel-slack">Slack</span>
+                  <span class="notification-channel notification-channel-telegram">Telegram</span>
+                  <span class="notification-channel notification-channel-email">Email</span>
+                </div>
+                <button
+                  type="button"
+                  class="btn"
+                  onclick="switchTab('nodes', {currentTarget: document.getElementById('tab-nodes')})"
+                >
+                  Back to Devices
+                </button>
+              </section>
             </div>
 
             <!-- Config Manager -->

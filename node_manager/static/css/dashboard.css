@@ -827,6 +827,115 @@ body {
 .device-row-active td:first-child {
   box-shadow: inset 3px 0 0 var(--primary-light);
 }
+.notification-nav-item {
+  gap: 8px;
+}
+.notification-beta-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #4338ca;
+  background: #e0e7ff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.notification-nav-item .notification-beta-badge {
+  margin-left: auto;
+}
+.notification-coming-soon {
+  max-width: 860px;
+  margin: 24px auto;
+  padding: clamp(20px, 4vw, 40px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+}
+.notification-coming-soon-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+.notification-coming-soon-heading .tab-header-title {
+  margin: 10px 0 8px;
+}
+.notification-coming-soon-heading .sublabel {
+  max-width: 650px;
+  line-height: 1.65;
+}
+.notification-coming-soon-icon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  place-items: center;
+  border-radius: 16px;
+  color: #4f46e5;
+  background: #eef2ff;
+}
+.notification-coming-soon-icon .icon {
+  width: 25px;
+  height: 25px;
+}
+.notification-purpose {
+  padding: 22px 0 10px;
+}
+.notification-purpose h3 {
+  margin: 0 0 14px;
+  color: var(--text-primary);
+  font-size: 15px;
+}
+.notification-purpose ol {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding-left: 24px;
+}
+.notification-purpose li {
+  padding-left: 4px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.notification-purpose li strong,
+.notification-purpose li span {
+  display: block;
+}
+.notification-purpose li strong {
+  margin-bottom: 3px;
+  color: var(--text-primary);
+}
+.notification-channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 16px 0 24px;
+}
+.notification-channel {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 650;
+}
+.notification-channel-slack {
+  color: #1264a3;
+  background: #eff6ff;
+}
+.notification-channel-telegram {
+  color: #087eaf;
+  background: #ecfeff;
+}
+.notification-channel-email {
+  color: #475569;
+  background: #f1f5f9;
+}
 .right-panel-action-hidden {
   display: none;
 }
@@ -1169,6 +1278,8 @@ button.diff-stat:hover {
     flex: 1 1 0;
     min-width: 0;
     padding: 0 8px;
+    box-sizing: border-box;
+    border: 2px solid transparent;
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: anywhere;
@@ -1194,20 +1305,31 @@ button.diff-stat:hover {
     background: #f1f3f5;
 }
 
-.diff-jump-highlight .diff-line-cell {
-    outline: 2px solid #2563eb;
-    outline-offset: -2px;
-    animation: diff-jump-pulse 1.4s ease-out;
+.diff-jump-active-added {
+    border-color: #16a34a;
+    box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+}
+
+.diff-jump-active-removed {
+    border-color: #dc2626;
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+}
+
+.diff-jump-active-modified {
+    border-color: #d97706;
+    box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.15);
+}
+
+.diff-no-differences {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-style: italic;
+    white-space: nowrap;
 }
 
 .diff-empty {
     padding: 20px;
     color: #666;
-}
-
-@keyframes diff-jump-pulse {
-    0% { background-color: #bfdbfe; }
-    100% { background-color: inherit; }
 }
 
 @media (max-width: 640px) {

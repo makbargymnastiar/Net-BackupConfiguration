@@ -26,6 +26,7 @@
 | Activity Log 会从 Oxidized 组 Git 历史补齐遗漏的定时备份，按设备和 60 秒窗口去重并保留提交时间及变更统计；右侧设备面板移除 Load Config 项，Backup History 的 View 在主内容区打开完整配置。 | Activity Log backfills missed scheduled backups from Oxidized group Git history, deduplicates by device within 60 seconds, and preserves commit times and change counts; the right-side device panel removes Load Config, and Backup History's View opens the full config in the main content area. |
 | Compare 将 replace 块中的配对行准确统计为修改，额外行统计为新增/删除；变更徽章可循环跳转至两侧对应位置。 | Compare accurately counts paired lines in replace blocks as modified and extra lines as added/removed; change badges cycle through matching positions in both panes. |
 | Compare 的跳转使用面板相对坐标并避免左右滚动同步中断动画；右侧设备/历史视图使用全高并隐藏 Activity Log，accordion 即时收起，编辑和计划表单仅保留 Save。 | Compare jumps use pane-relative coordinates and prevent scroll synchronization from interrupting animation; device/history views fill the right panel and hide Activity Log, accordions collapse immediately, and edit/schedule forms keep only Save. |
+| Compare 的 OLD/NEW 标题显示对应的变化统计，点击徽章会循环跳转并持续标记当前变更块；关闭右侧面板会关闭中间的查看/对比。Settings 提供 Notifications Beta 预览，通知渠道仍为 Coming Soon。 | Compare OLD/NEW headers show side-specific change counts; badge clicks cycle through hunks and keep the active hunk marked, and closing the right panel closes the center viewer/compare. Settings includes a Notifications Beta preview; delivery channels are still Coming Soon. |
 
 ### v1.2.0 (2026-04-21) ⚠️ 重大升级 / ⚠️ MAJOR UPGRADE
 
