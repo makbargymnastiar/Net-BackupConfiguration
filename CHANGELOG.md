@@ -8,6 +8,7 @@
 
 | 中文 | English |
 |------|---------|
+| **Activity Log 与 Compare 面板修复** — 登录后立即显示并加载 Activity Log，初始隐藏设备操作面板；Compare 跳转使用实际滚动容器并保持逐行计数，激活行的黄/绿/红轮廓不会覆盖空白 spacer。 | **Activity Log and Compare panel fixes** — Show and load the Activity Log immediately after login while initially hiding device actions; Compare jumps use the actual scroll containers and preserve per-line counts, with yellow/green/red active outlines that avoid blank spacer cells. |
 | **Compare 逐行导航与高亮** — Compare 徽章的计数与逐行跳转目标保持一致；两侧代码面板以同步锁进行双向平滑滚动，黄色、绿色和红色高亮边框与各自背景协调。 | **Compare line navigation and highlighting** — Compare badge counts now match their per-line jump targets; both code panes scroll smoothly in either direction under a synchronization lock, with yellow, green, and red active outlines matched to their backgrounds. |
 | **备份结果校验** — 手动和 Oxidized 定时备份只有在返回有效、非空配置时才标记为成功；失败结果会同步设备状态和 Activity Log。 | **Backup result validation** — Manual and Oxidized-scheduled backups are successful only when valid, non-empty configuration is returned; failures update device status and the Activity Log. |
 | **设备状态与历史视图** — 初始连接状态显示为琥珀色 `Not Connected`；Backup History 增加 Full View，支持在主内容区阅读并复制完整配置。 | **Device status and history view** — Initial connection state is shown as an amber `Not Connected` badge; Backup History adds Full View to read and copy full configurations in the main content area. |

@@ -574,7 +574,10 @@ function openDeviceManagerPanel(deviceName) {
     panel.classList.remove("right-panel-compact-action", "right-panel-diff");
   }
   const actionSection = document.querySelector(".right-panel-action");
-  if (actionSection) actionSection.classList.remove("right-panel-action-hidden");
+  if (actionSection) {
+    actionSection.hidden = false;
+    actionSection.classList.remove("right-panel-action-hidden");
+  }
   renderDevicePanelHeader(deviceName);
   const body = document.getElementById("action-detail-panel");
   if (!body) return;
@@ -690,7 +693,15 @@ function renderActionPanelPlaceholder() {
   activeDeviceAccordionSection = null;
   diffShownInPanel = false;
   const actionSection = document.querySelector(".right-panel-action");
-  if (actionSection) actionSection.classList.add("right-panel-action-hidden");
+  if (actionSection) {
+    actionSection.hidden = true;
+    actionSection.classList.add("right-panel-action-hidden");
+  }
+  const activitySection = document.querySelector(".right-panel-activity");
+  if (activitySection) {
+    activitySection.hidden = false;
+    activitySection.style.removeProperty("display");
+  }
   const panelBody = document.getElementById("action-detail-panel");
   if (panelBody) {
     panelBody.classList.remove("panel-split-mode");
@@ -703,7 +714,13 @@ function renderActionPanelPlaceholder() {
   if (wasDevicePanel) {
     currentPanelDevice = null;
     renderDevices();
+    loadActivityLog();
   }
+}
+
+function initializeRightPanel() {
+  renderActionPanelPlaceholder();
+  loadActivityLog();
 }
 
 // Per-action glyphs that mirror the icons in the device row's pencil menu, so
@@ -799,8 +816,10 @@ function setActionPanelContext(deviceName, actionLabel) {
   }
 
   const actionSection = document.querySelector(".right-panel-action");
-  if (actionSection)
+  if (actionSection) {
+    actionSection.hidden = false;
     actionSection.classList.remove("right-panel-action-hidden");
+  }
   const titleEl = document.getElementById("right-panel-action-title");
   // Single header line "(action icon) Title — device". The icon matches the
   // same action in the device row's action menu (Edit=pencil, History=clock).
@@ -2251,13 +2270,16 @@ function showDiff(nodeName, oid1, oid2, epoch1, epoch2, oldLabel, newLabel) {
 }
 
 let diffScrollSyncing = false;
-let isProgrammaticScroll = false;
+let isJumpingScroll = false;
 let diffProgrammaticScrollTimer = null;
 
-function syncScroll(source, targetId) {
-  if (diffScrollSyncing || isProgrammaticScroll) return;
+function syncScroll(source, targetRef) {
+  if (diffScrollSyncing || isJumpingScroll) return;
   diffScrollSyncing = true;
-  const target = document.getElementById(targetId);
+  const target =
+    typeof targetRef === "string"
+      ? document.getElementById(targetRef)
+      : targetRef;
   if (target) {
     target.scrollTop = source.scrollTop;
     target.scrollLeft = source.scrollLeft;
@@ -2265,6 +2287,36 @@ function syncScroll(source, targetId) {
   requestAnimationFrame(() => {
     diffScrollSyncing = false;
   });
+}
+
+function bindDiffScrollSync() {
+  const diffContent = document.getElementById("diffModalContent");
+  if (!diffContent || diffContent.dataset.scrollSyncBound) return;
+  diffContent.dataset.scrollSyncBound = "true";
+  diffContent.addEventListener(
+    "scroll",
+    (event) => {
+      if (diffScrollSyncing || isJumpingScroll) return;
+      const oldRow = document.querySelector(
+        ".diff-pane-old .diff-line-row",
+      );
+      const newRow = document.querySelector(
+        ".diff-pane-new .diff-line-row",
+      );
+      if (!oldRow || !newRow) return;
+      const oldContainer = findDiffScrollContainer(oldRow);
+      const newContainer = findDiffScrollContainer(newRow);
+      if (!oldContainer || !newContainer || oldContainer === newContainer) {
+        return;
+      }
+      if (event.target === oldContainer) {
+        syncScroll(oldContainer, newContainer);
+      } else if (event.target === newContainer) {
+        syncScroll(newContainer, oldContainer);
+      }
+    },
+    true,
+  );
 }
 
 const diffJumpIndexes = { added: 0, removed: 0, modified: 0 };
@@ -2378,23 +2430,28 @@ function jumpToDiffChange(kind) {
   if (!oldPane || !newPane || !targets || targets.length === 0) return;
 
   const target = targets[diffJumpIndexes[kind] % targets.length];
-  diffJumpIndexes[kind] += 1;
   const targetIndex = target.start;
   const panes = [oldPane, newPane];
-  const targetPositions = panes.map((pane) => {
-    const targetCell = pane.querySelector(
+  const targetRows = panes.map((pane) =>
+    pane.querySelector(
       `.diff-line-row[data-diff-index="${targetIndex}"]`,
-    );
-    if (!targetCell) return null;
-    const maxScroll = pane.scrollHeight - pane.clientHeight;
+    ),
+  );
+  if (targetRows.some((row) => !row)) return;
+  const scrollContainers = targetRows.map((row) =>
+    findDiffScrollContainer(row),
+  );
+  if (scrollContainers.some((container) => !container)) return;
+  const targetPositions = scrollContainers.map((container, index) => {
+    const maxScroll = container.scrollHeight - container.clientHeight;
     const rawTarget =
-      pane.scrollTop +
-      (targetCell.getBoundingClientRect().top -
-        pane.getBoundingClientRect().top) -
-      pane.clientHeight / 3;
+      container.scrollTop +
+      (targetRows[index].getBoundingClientRect().top -
+        container.getBoundingClientRect().top) -
+      container.clientHeight * 0.35;
     return Math.max(0, Math.min(maxScroll, rawTarget));
   });
-  if (targetPositions.some((position) => position === null)) return;
+  diffJumpIndexes[kind] += 1;
 
   clearDiffJumpCells();
   const oldCell = oldPane.querySelector(
@@ -2412,15 +2469,30 @@ function jumpToDiffChange(kind) {
   diffActiveTarget = { kind, start: target.start };
   updateDiffJumpBadgeLabels();
 
-  isProgrammaticScroll = true;
+  isJumpingScroll = true;
   clearTimeout(diffProgrammaticScrollTimer);
   diffProgrammaticScrollTimer = setTimeout(() => {
-    isProgrammaticScroll = false;
-  }, 650);
+    isJumpingScroll = false;
+  }, 700);
 
-  panes.forEach((pane, index) => {
-    pane.scrollTo({ top: targetPositions[index], behavior: "smooth" });
+  scrollContainers.forEach((container, index) => {
+    container.scrollTo({ top: targetPositions[index], behavior: "smooth" });
   });
+}
+
+function findDiffScrollContainer(targetRow) {
+  let element = targetRow;
+  while (element) {
+    const overflowY = window.getComputedStyle(element).overflowY;
+    if (
+      element.scrollHeight > element.clientHeight &&
+      /^(auto|scroll|overlay)$/.test(overflowY)
+    ) {
+      return element;
+    }
+    element = element.parentElement;
+  }
+  return null;
 }
 
 function clearDiffJumpCells() {
@@ -2439,7 +2511,7 @@ function clearDiffJumpCells() {
 function clearDiffJumpHighlight() {
   clearTimeout(diffProgrammaticScrollTimer);
   diffProgrammaticScrollTimer = null;
-  isProgrammaticScroll = false;
+  isJumpingScroll = false;
   clearDiffJumpCells();
   diffActiveTarget = null;
   Object.keys(diffJumpIndexes).forEach((kind) => {
@@ -5084,6 +5156,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 updateUI();
+initializeRightPanel();
+bindDiffScrollSync();
 initPasswordToggleIcons();
 markSidebarLeafItems();
 restoreActiveTab();
@@ -5092,7 +5166,6 @@ setupSchedulerDataView();
 loadSchedulerSettings();
 loadGroups();
 refreshOxidizedStatus(true); // silent on load; only the Refresh button pops a toast
-loadActivityLog();
 initializeIdleSessionTimeout();
 setInterval(() => refreshOxidizedStatus(true), 60000);
 // Refresh the persisted Activity Log from the server every minute so outcomes

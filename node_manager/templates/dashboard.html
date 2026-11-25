@@ -2201,7 +2201,10 @@
       </div>
 
       <aside class="right-panel">
-        <div class="right-panel-section right-panel-action right-panel-action-hidden">
+        <div
+          class="right-panel-section right-panel-action right-panel-action-hidden"
+          hidden
+        >
           <div class="right-panel-section-header">
             <h3 id="right-panel-action-title">Action / Detail</h3>
             <button
@@ -2669,7 +2672,6 @@
             </div>
             <div
               id="diff-old-content"
-              onscroll="syncScroll(this, 'diff-new-content')"
               class="diff-pane-body"
             ></div>
           </div>
@@ -2682,7 +2684,6 @@
             </div>
             <div
               id="diff-new-content"
-              onscroll="syncScroll(this, 'diff-old-content')"
               class="diff-pane-body"
             ></div>
           </div>
