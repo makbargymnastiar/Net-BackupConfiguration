@@ -202,7 +202,7 @@ def test_manual_backup_waits_for_new_end_before_using_failure_status(monkeypatch
     assert "no_connection" in result["error"]
 
 
-def test_manual_backup_does_not_reuse_old_timestamp_for_failure(monkeypatch):
+def test_manual_backup_timeout_returns_snapshot_time_for_consistency(monkeypatch):
     class OxidizedResponse:
         status_code = 200
 
@@ -234,7 +234,7 @@ def test_manual_backup_does_not_reuse_old_timestamp_for_failure(monkeypatch):
 
     assert result["success"] is False
     assert result["status"] == "failed"
-    assert result["last_backup"] is None
+    assert result["last_backup"] == "2026-01-01T00:00:00+00:00"
 
 
 def test_manual_backup_failure_is_persisted(test_client_with_auth, monkeypatch, tmp_path):
@@ -394,6 +394,34 @@ def test_status_refresh_preserves_manual_failure_without_new_completion(
     assert Node.get_by_name(node.name).last_status == "failed"
 
 
+def test_status_refresh_preserves_manual_timeout_without_any_completion(
+    test_client_with_auth, monkeypatch
+):
+    node = _create_node()
+    node.last_status = "failed"
+    node.save()
+    monkeypatch.setattr(
+        "routes.oxidized_api.get_oxidized_nodes_status",
+        lambda: [
+            {
+                "name": node.name,
+                "status": "success",
+                "stats": {"last": {"status": "success"}},
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "routes.oxidized_api.get_oxidized_config",
+        lambda _name: "hostname edge-router\n",
+    )
+
+    response = test_client_with_auth.get("/api/oxidized/status")
+
+    assert response.status_code == 200
+    assert response.json[0]["status"] == "failed"
+    assert Node.get_by_name(node.name).last_status == "failed"
+
+
 def test_diff_normalizes_empty_and_iso_epochs(test_client_with_auth, monkeypatch):
     received_epochs = []
 
@@ -465,6 +493,29 @@ def test_compare_classifies_unpaired_replacement_lines_as_additions_and_removals
         "equal",
     ]
     assert (lines[3]["old_line"], lines[3]["new_line"]) == (None, 4)
+
+
+def test_compare_delete_rows_include_same_height_placeholder_data():
+    from routes.oxidized_api import _compare_configurations
+
+    lines, stats = _compare_configurations(
+        "first\nremoved one\nremoved two\nlast\n",
+        "first\nlast\n",
+    )
+
+    assert stats["removed"] == 2
+    assert [line["type"] for line in lines] == [
+        "equal",
+        "delete",
+        "delete",
+        "equal",
+    ]
+    assert all(
+        line["old_line"] is not None
+        and line["new_line"] is None
+        and line["new_content"] == ""
+        for line in lines[1:3]
+    )
 
 
 def test_activity_log_exposes_new_counts_and_parses_legacy_lines(tmp_path, monkeypatch):

@@ -453,6 +453,12 @@ def trigger_oxidized_backup(node_name):
     """Trigger backup and wait for Oxidized to publish its final node status."""
     try:
         previous_status = get_oxidized_node_status(node_name, timeout=5)
+        if not isinstance(previous_status, dict):
+            return {
+                "success": False,
+                "status": "failed",
+                "error": "Unable to read Oxidized node status before backup",
+            }
         previous_end = _parse_backup_time(_backup_end_time(previous_status))
 
         response = requests.get(
@@ -501,7 +507,7 @@ def trigger_oxidized_backup(node_name):
                         "last_backup": current_end.isoformat(timespec="seconds"),
                         "error": f"Oxidized backup finished with status: {last_status}",
                     }
-                if last_status not in {"success", "successful"}:
+                if last_status != "success":
                     return {
                         "success": False,
                         "status": "failed",
@@ -533,7 +539,11 @@ def trigger_oxidized_backup(node_name):
         return {
             "success": False,
             "status": "failed",
-            "last_backup": None,
+            "last_backup": (
+                previous_end.isoformat(timespec="seconds")
+                if previous_end
+                else None
+            ),
             "error": (
                 "Oxidized backup did not complete within 90 seconds"
                 + (f" (last status: {last_status})" if last_status else "")

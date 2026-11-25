@@ -1262,7 +1262,10 @@ button.diff-stat:hover {
     display: flex;
     width: max-content;
     min-width: 100%;
+    height: 22px;
     min-height: 22px;
+    flex: 0 0 22px;
+    align-items: stretch;
     scroll-margin: 45%;
 }
 
@@ -2483,30 +2486,6 @@ textarea#cfg-yaml-editor {
   box-shadow: none;
   transform: translateY(0);
 }
-.btn-row-primary:disabled {
-  cursor: wait;
-  opacity: 0.88;
-  box-shadow: none;
-  transform: none;
-}
-.btn-row-primary:disabled:hover {
-  background: var(--success);
-  border-color: var(--success);
-}
-.backup-button-spinner {
-  width: 12px;
-  height: 12px;
-  flex: 0 0 12px;
-  border: 2px solid rgba(255, 255, 255, 0.45);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: backup-button-spin 0.7s linear infinite;
-}
-@keyframes backup-button-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 .action-menu-wrap {
   position: relative;
   display: inline-flex;
@@ -3539,6 +3518,8 @@ textarea#cfg-yaml-editor {
 .diff-pane-body {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
     overflow-y: auto;
     overflow-x: auto;
     font-family: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;

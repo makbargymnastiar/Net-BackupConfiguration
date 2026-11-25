@@ -392,6 +392,11 @@ def _record_scheduled_backup_results(status_data):
             # Oxidized may still expose stale status data without a new last.end.
             payload["status"] = node.last_status
             continue
+        if node.last_status == "failed" and not completed_at:
+            # A timed-out manual run with no previous completion time has no
+            # Oxidized timestamp to reconcile until the next run completes.
+            payload["status"] = node.last_status
+            continue
 
         error_text = " ".join(
             str(source.get(key) or "")
