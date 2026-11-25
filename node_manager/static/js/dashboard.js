@@ -2270,11 +2270,15 @@ function showDiff(nodeName, oid1, oid2, epoch1, epoch2, oldLabel, newLabel) {
 }
 
 let diffScrollSyncing = false;
-let isJumpingScroll = false;
-let diffProgrammaticScrollTimer = null;
+let diffScrollSyncBound = false;
+let isProgrammaticJump = false;
+let diffJumpFrame = null;
+let diffJumpVerifyFrame = null;
+let diffJumpSequence = 0;
+let diffJumpScrollStyles = [];
 
 function syncScroll(source, targetRef) {
-  if (diffScrollSyncing || isJumpingScroll) return;
+  if (diffScrollSyncing || isProgrammaticJump) return;
   diffScrollSyncing = true;
   const target =
     typeof targetRef === "string"
@@ -2290,13 +2294,12 @@ function syncScroll(source, targetRef) {
 }
 
 function bindDiffScrollSync() {
-  const diffContent = document.getElementById("diffModalContent");
-  if (!diffContent || diffContent.dataset.scrollSyncBound) return;
-  diffContent.dataset.scrollSyncBound = "true";
-  diffContent.addEventListener(
+  if (diffScrollSyncBound) return;
+  diffScrollSyncBound = true;
+  document.addEventListener(
     "scroll",
     (event) => {
-      if (diffScrollSyncing || isJumpingScroll) return;
+      if (diffScrollSyncing || isProgrammaticJump) return;
       const oldRow = document.querySelector(
         ".diff-pane-old .diff-line-row",
       );
@@ -2304,8 +2307,8 @@ function bindDiffScrollSync() {
         ".diff-pane-new .diff-line-row",
       );
       if (!oldRow || !newRow) return;
-      const oldContainer = findDiffScrollContainer(oldRow);
-      const newContainer = findDiffScrollContainer(newRow);
+      const oldContainer = getScrollablePane(oldRow);
+      const newContainer = getScrollablePane(newRow);
       if (!oldContainer || !newContainer || oldContainer === newContainer) {
         return;
       }
@@ -2380,7 +2383,7 @@ document.addEventListener("click", (event) => {
   const badge = target && target.closest
     ? target.closest("[data-diff-jump]")
     : null;
-  if (badge) jumpToDiffChange(badge.dataset.diffJump);
+  if (badge) jumpToDiffTarget(badge.dataset.diffJump);
 });
 
 function renderSplitDiff(lines) {
@@ -2423,7 +2426,7 @@ function renderSplitDiff(lines) {
   renderDiffStats();
 }
 
-function jumpToDiffChange(kind) {
+function jumpToDiffTarget(kind) {
   const oldPane = document.getElementById("diff-old-content");
   const newPane = document.getElementById("diff-new-content");
   const targets = diffJumpTargets[kind];
@@ -2439,19 +2442,27 @@ function jumpToDiffChange(kind) {
   );
   if (targetRows.some((row) => !row)) return;
   const scrollContainers = targetRows.map((row) =>
-    findDiffScrollContainer(row),
+    getScrollablePane(row),
   );
   if (scrollContainers.some((container) => !container)) return;
+  const targetElements = [
+    kind === "added"
+      ? targetRows[0]
+      : targetRows[0].querySelector(".diff-line-cell:not(.diff-spacer)"),
+    kind === "removed"
+      ? targetRows[1]
+      : targetRows[1].querySelector(".diff-line-cell:not(.diff-spacer)"),
+  ];
+  if (targetElements.some((element) => !element)) return;
   const targetPositions = scrollContainers.map((container, index) => {
     const maxScroll = container.scrollHeight - container.clientHeight;
-    const rawTarget =
+    const rawTop =
       container.scrollTop +
-      (targetRows[index].getBoundingClientRect().top -
+      (targetElements[index].getBoundingClientRect().top -
         container.getBoundingClientRect().top) -
-      container.clientHeight * 0.35;
-    return Math.max(0, Math.min(maxScroll, rawTarget));
+      container.clientHeight * 0.32;
+    return Math.max(0, Math.min(maxScroll, Math.round(rawTop)));
   });
-  diffJumpIndexes[kind] += 1;
 
   clearDiffJumpCells();
   const oldCell = oldPane.querySelector(
@@ -2466,33 +2477,72 @@ function jumpToDiffChange(kind) {
   if (kind !== "removed" && newCell) {
     newCell.classList.add(`diff-jump-active-${kind}`, "diff-jump-active-cell");
   }
+  diffJumpIndexes[kind] += 1;
   diffActiveTarget = { kind, start: target.start };
   updateDiffJumpBadgeLabels();
 
-  isJumpingScroll = true;
-  clearTimeout(diffProgrammaticScrollTimer);
-  diffProgrammaticScrollTimer = setTimeout(() => {
-    isJumpingScroll = false;
-  }, 700);
-
+  cancelDiffProgrammaticJump();
+  const sequence = ++diffJumpSequence;
+  isProgrammaticJump = true;
+  diffJumpScrollStyles = scrollContainers.map((container) => ({
+    container,
+    scrollBehavior: container.style.scrollBehavior,
+  }));
   scrollContainers.forEach((container, index) => {
-    container.scrollTo({ top: targetPositions[index], behavior: "smooth" });
+    container.style.scrollBehavior = "auto";
+    container.scrollTop = targetPositions[index];
+  });
+
+  diffJumpFrame = requestAnimationFrame(() => {
+    if (sequence !== diffJumpSequence) return;
+    scrollContainers.forEach((container, index) => {
+      if (Math.abs(container.scrollTop - targetPositions[index]) > 1) {
+        container.scrollTop = targetPositions[index];
+      }
+    });
+    diffJumpVerifyFrame = requestAnimationFrame(() => {
+      if (sequence !== diffJumpSequence) return;
+      scrollContainers.forEach((container, index) => {
+        if (Math.abs(container.scrollTop - targetPositions[index]) > 1) {
+          container.scrollTop = targetPositions[index];
+        }
+      });
+      restoreDiffJumpScrollStyles();
+      isProgrammaticJump = false;
+      diffJumpFrame = null;
+      diffJumpVerifyFrame = null;
+    });
   });
 }
 
-function findDiffScrollContainer(targetRow) {
-  let element = targetRow;
+function getScrollablePane(element) {
+  let fallback = null;
   while (element) {
     const overflowY = window.getComputedStyle(element).overflowY;
-    if (
-      element.scrollHeight > element.clientHeight &&
-      /^(auto|scroll|overlay)$/.test(overflowY)
-    ) {
-      return element;
+    if (/^(auto|scroll|overlay)$/.test(overflowY)) {
+      if (!fallback) fallback = element;
+      if (element.scrollHeight > element.clientHeight + 5) return element;
     }
     element = element.parentElement;
   }
-  return null;
+  return fallback;
+}
+
+function cancelDiffProgrammaticJump() {
+  diffJumpSequence += 1;
+  if (diffJumpFrame !== null) cancelAnimationFrame(diffJumpFrame);
+  if (diffJumpVerifyFrame !== null) cancelAnimationFrame(diffJumpVerifyFrame);
+  restoreDiffJumpScrollStyles();
+  diffJumpFrame = null;
+  diffJumpVerifyFrame = null;
+  isProgrammaticJump = false;
+}
+
+function restoreDiffJumpScrollStyles() {
+  diffJumpScrollStyles.forEach(({ container, scrollBehavior }) => {
+    container.style.scrollBehavior = scrollBehavior;
+  });
+  diffJumpScrollStyles = [];
 }
 
 function clearDiffJumpCells() {
@@ -2509,9 +2559,8 @@ function clearDiffJumpCells() {
 }
 
 function clearDiffJumpHighlight() {
-  clearTimeout(diffProgrammaticScrollTimer);
-  diffProgrammaticScrollTimer = null;
-  isJumpingScroll = false;
+  cancelDiffProgrammaticJump();
+  diffJumpSequence += 1;
   clearDiffJumpCells();
   diffActiveTarget = null;
   Object.keys(diffJumpIndexes).forEach((kind) => {
@@ -5156,7 +5205,6 @@ document.addEventListener("keydown", (e) => {
 });
 
 updateUI();
-initializeRightPanel();
 bindDiffScrollSync();
 initPasswordToggleIcons();
 markSidebarLeafItems();
@@ -5167,6 +5215,16 @@ loadSchedulerSettings();
 loadGroups();
 refreshOxidizedStatus(true); // silent on load; only the Refresh button pops a toast
 initializeIdleSessionTimeout();
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeRightPanel, {
+    once: true,
+  });
+} else {
+  initializeRightPanel();
+}
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) initializeRightPanel();
+});
 setInterval(() => refreshOxidizedStatus(true), 60000);
 // Refresh the persisted Activity Log from the server every minute so outcomes
 // recorded by other sessions/browsers appear without a manual reload.
