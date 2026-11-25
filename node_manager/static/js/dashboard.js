@@ -1546,6 +1546,17 @@ function getModelDisplayName(modelId) {
   return found ? formatModelDisplay(found.name) : modelId;
 }
 
+function renderBackupButton(nodeName) {
+  const isRunning = ["triggered", "waiting"].includes(
+    triggerStatusOverrides[nodeName],
+  );
+  const label =
+    triggerStatusOverrides[nodeName] === "triggered"
+      ? "Starting..."
+      : "Backing up...";
+  return `<button class="btn btn-row-primary" onclick="triggerBackup('${escapeHtml(nodeName)}')" title="Trigger Backup" ${isRunning ? 'disabled aria-busy="true"' : ""}>${isRunning ? `<span class="backup-button-spinner" aria-hidden="true"></span><span>${label}</span>` : "Backup"}</button>`;
+}
+
 function renderNodeRowLegacy(node) {
   return `
         <tr>
@@ -1561,7 +1572,7 @@ function renderNodeRowLegacy(node) {
             <td>${formatLatestBackupDate(oxidizedStatus[node.name])}</td>
             <td>
                 <div class="row-actions">
-                    <button class="btn btn-row-primary" onclick="triggerBackup('${escapeHtml(node.name)}')" title="Trigger Backup">Backup</button>
+                    ${renderBackupButton(node.name)}
                     <div class="action-menu-wrap">
                         <button class="action-menu-toggle" onclick="toggleActionMenu(this, event)" title="Actions" aria-label="Actions"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
                         <div class="action-menu">
@@ -1610,7 +1621,7 @@ function renderNodeRow(node) {
       <td>${formatLatestBackupDate(oxidizedStatus[node.name])}</td>
       <td>
         <div class="row-actions">
-          <button class="btn btn-row-primary" onclick="triggerBackup('${escapeHtml(node.name)}')" title="Trigger Backup">Backup</button>
+        ${renderBackupButton(node.name)}
           <button class="action-menu-toggle" onclick="manageDevicePanel('${escapeHtml(node.name)}')" title="Manage Device" aria-label="Manage Device">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
               <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
@@ -3371,12 +3382,18 @@ function refreshNodeDisplays() {
 }
 
 function triggerBackup(nodeName) {
+  if (["triggered", "waiting"].includes(triggerStatusOverrides[nodeName])) {
+    return;
+  }
   confirmAction(`Trigger backup for ${nodeName}?`, () =>
     doTriggerBackup(nodeName),
   );
 }
 
 function doTriggerBackup(nodeName) {
+  if (["triggered", "waiting"].includes(triggerStatusOverrides[nodeName])) {
+    return;
+  }
   setTriggerStatus(nodeName, "triggered");
   // One Activity Log entry for this whole trigger: starts as "pending"
   // (Waiting) and gets updated in place below — never a second entry, and
@@ -3418,6 +3435,7 @@ function doTriggerBackup(nodeName) {
           Date.parse(data.last_backup) || now,
           data.activity_entry,
         );
+        loadActivityLog();
         showInfoToast(`Backup completed (${nodeName})`);
       } else {
         oxidizedStatus[nodeName] = Object.assign(
@@ -3437,6 +3455,7 @@ function doTriggerBackup(nodeName) {
           Date.parse(data.last_backup) || now,
           data.activity_entry,
         );
+        loadActivityLog();
         showInfoToast(
           data.error || `Backup failed (${nodeName})`,
           true,
@@ -3452,6 +3471,7 @@ function doTriggerBackup(nodeName) {
       );
       setTriggerStatus(nodeName, null);
       updateActivityLogEntry(logId, "failed", Date.now());
+      loadActivityLog();
       refreshNodeDisplays();
       showInfoToast(
         error && error.message

@@ -1260,8 +1260,8 @@ button.diff-stat:hover {
 
 .diff-line-row {
     display: flex;
-    width: 100%;
-    min-width: 0;
+    width: max-content;
+    min-width: 100%;
     min-height: 22px;
     scroll-margin: 45%;
 }
@@ -1269,6 +1269,7 @@ button.diff-stat:hover {
 .diff-line-number {
     box-sizing: border-box;
     width: 50px;
+    min-width: 50px;
     flex: 0 0 50px;
     padding: 0 8px;
     color: #888;
@@ -1278,14 +1279,12 @@ button.diff-stat:hover {
 }
 
 .diff-line-cell {
-    flex: 1 1 0;
-    min-width: 0;
+    flex: 1 0 auto;
+    min-width: max-content;
     padding: 0 8px;
     box-sizing: border-box;
     border: 2px solid transparent;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-wrap: anywhere;
+    white-space: pre;
 }
 
 .diff-cell-same {
@@ -2484,6 +2483,30 @@ textarea#cfg-yaml-editor {
   box-shadow: none;
   transform: translateY(0);
 }
+.btn-row-primary:disabled {
+  cursor: wait;
+  opacity: 0.88;
+  box-shadow: none;
+  transform: none;
+}
+.btn-row-primary:disabled:hover {
+  background: var(--success);
+  border-color: var(--success);
+}
+.backup-button-spinner {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: backup-button-spin 0.7s linear infinite;
+}
+@keyframes backup-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .action-menu-wrap {
   position: relative;
   display: inline-flex;
@@ -3517,7 +3540,7 @@ textarea#cfg-yaml-editor {
     flex: 1;
     min-width: 0;
     overflow-y: auto;
-    overflow-x: hidden;
+    overflow-x: auto;
     font-family: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
     font-size: 12px;
     line-height: 1.5;

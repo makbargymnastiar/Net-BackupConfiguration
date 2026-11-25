@@ -387,6 +387,12 @@ def _record_scheduled_backup_results(status_data):
             payload["status"] = node.last_status
             continue
 
+        if node.last_backup:
+            # Keep the persisted result of the latest completed/manual backup.
+            # Oxidized may still expose stale status data without a new last.end.
+            payload["status"] = node.last_status
+            continue
+
         error_text = " ".join(
             str(source.get(key) or "")
             for source in (payload, stats, last_data if isinstance(last_data, dict) else {})

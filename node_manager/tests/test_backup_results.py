@@ -166,6 +166,42 @@ def test_manual_backup_reports_new_oxidized_failure_status(monkeypatch):
     assert "no_connection" in result["error"]
 
 
+def test_manual_backup_waits_for_new_end_before_using_failure_status(monkeypatch):
+    class OxidizedResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {}
+
+    statuses = iter(
+        [
+            {"stats": {"last": {"end": "2026-01-01T00:00:00Z", "status": "success"}}},
+            {"stats": {"last": {"end": "2026-01-01T00:00:00Z", "status": "no_connection"}}},
+            {"stats": {"last": {"end": "2026-01-01T00:00:01Z", "status": "no_connection"}}},
+        ]
+    )
+    monkeypatch.setattr(
+        oxidized_service.requests,
+        "get",
+        lambda *_args, **_kwargs: OxidizedResponse(),
+    )
+    monkeypatch.setattr(
+        oxidized_service,
+        "get_oxidized_node_status",
+        lambda _name, **_kwargs: next(statuses),
+    )
+    monkeypatch.setattr(oxidized_service.time, "sleep", lambda *_args: None)
+    monkeypatch.setattr(oxidized_service, "BACKUP_COMPLETION_POLL_ATTEMPTS", 2)
+
+    result = oxidized_service.trigger_oxidized_backup("edge-router")
+
+    assert result["success"] is False
+    assert result["status"] == "failed"
+    assert result["last_backup"] == "2026-01-01T00:00:01+00:00"
+    assert "no_connection" in result["error"]
+
+
 def test_manual_backup_does_not_reuse_old_timestamp_for_failure(monkeypatch):
     class OxidizedResponse:
         status_code = 200
@@ -177,6 +213,7 @@ def test_manual_backup_does_not_reuse_old_timestamp_for_failure(monkeypatch):
     statuses = iter(
         [
             {"stats": {"last": {"end": "2026-01-01T00:00:00Z", "status": "success"}}},
+            {"stats": {"last": {"end": "2026-01-01T00:00:00Z", "status": "no_connection"}}},
             {"stats": {"last": {"end": "2026-01-01T00:00:00Z", "status": "no_connection"}}},
         ]
     )
@@ -190,6 +227,8 @@ def test_manual_backup_does_not_reuse_old_timestamp_for_failure(monkeypatch):
         "get_oxidized_node_status",
         lambda _name, **_kwargs: next(statuses),
     )
+    monkeypatch.setattr(oxidized_service.time, "sleep", lambda *_args: None)
+    monkeypatch.setattr(oxidized_service, "BACKUP_COMPLETION_POLL_ATTEMPTS", 2)
 
     result = oxidized_service.trigger_oxidized_backup("edge-router")
 
@@ -322,6 +361,39 @@ def test_scheduled_backup_with_empty_config_is_logged_as_failed(
     assert "FAILED" in activity_log.read_text(encoding="utf-8")
 
 
+def test_status_refresh_preserves_manual_failure_without_new_completion(
+    test_client_with_auth, monkeypatch
+):
+    node = _create_node()
+    node.last_backup = "2026-11-19T04:00:00+00:00"
+    node.last_status = "failed"
+    node.save()
+    monkeypatch.setattr(
+        "routes.oxidized_api.get_oxidized_nodes_status",
+        lambda: [
+            {
+                "name": node.name,
+                "stats": {
+                    "last": {
+                        "end": "2026-11-19T04:00:00Z",
+                        "status": "success",
+                    }
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "routes.oxidized_api.get_oxidized_config",
+        lambda _name: "hostname edge-router\n",
+    )
+
+    response = test_client_with_auth.get("/api/oxidized/status")
+
+    assert response.status_code == 200
+    assert response.json[0]["status"] == "failed"
+    assert Node.get_by_name(node.name).last_status == "failed"
+
+
 def test_diff_normalizes_empty_and_iso_epochs(test_client_with_auth, monkeypatch):
     received_epochs = []
 
@@ -369,6 +441,8 @@ def test_compare_groups_replacements_as_modified_and_keeps_rows_aligned():
     ]
     assert lines[1]["old_content"] == "old setting"
     assert lines[1]["new_content"] == "new setting"
+    assert (lines[1]["old_line"], lines[1]["new_line"]) == (2, 2)
+    assert (lines[5]["old_line"], lines[5]["new_line"]) == (None, 6)
 
 
 def test_compare_classifies_unpaired_replacement_lines_as_additions_and_removals():
@@ -390,6 +464,7 @@ def test_compare_classifies_unpaired_replacement_lines_as_additions_and_removals
         "insert",
         "equal",
     ]
+    assert (lines[3]["old_line"], lines[3]["new_line"]) == (None, 4)
 
 
 def test_activity_log_exposes_new_counts_and_parses_legacy_lines(tmp_path, monkeypatch):

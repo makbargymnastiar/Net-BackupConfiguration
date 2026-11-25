@@ -445,7 +445,7 @@ def _parse_backup_time(value):
         return None
 
 
-BACKUP_COMPLETION_POLL_ATTEMPTS = 30
+BACKUP_COMPLETION_POLL_ATTEMPTS = 90
 BACKUP_COMPLETION_POLL_INTERVAL_SECONDS = 1
 
 
@@ -477,26 +477,15 @@ def trigger_oxidized_backup(node_name):
             message = result.get("message")
             if message and _is_oxidized_error_message(str(message)):
                 return {"success": False, "error": "Oxidized backup failed"}
-            status = str(result.get("status", "")).lower()
-            if status in {"failed", "error", "no_connection"}:
-                return {
-                    "success": False,
-                    "status": "failed",
-                    "error": f"Oxidized backup failed: {status}",
-                }
         elif isinstance(result, str) and _is_oxidized_error_message(result):
-            return {
-                "success": False,
-                "status": "failed",
-                "error": "Oxidized backup failed",
-            }
+            return {"success": False, "error": "Oxidized backup failed"}
 
         deadline = time.monotonic() + (
             BACKUP_COMPLETION_POLL_ATTEMPTS
             * BACKUP_COMPLETION_POLL_INTERVAL_SECONDS
         )
         attempt = 0
-        previous_last_status = _backup_last_status(previous_status)
+        last_status = ""
         while attempt < BACKUP_COMPLETION_POLL_ATTEMPTS and time.monotonic() < deadline:
             remaining = max(0.1, deadline - time.monotonic())
             current_status = get_oxidized_node_status(
@@ -504,27 +493,7 @@ def trigger_oxidized_backup(node_name):
             )
             current_end = _parse_backup_time(_backup_end_time(current_status))
             last_status = _backup_last_status(current_status)
-            if (
-                _is_backup_failure_status(last_status)
-                and last_status != previous_last_status
-            ):
-                completed_end = (
-                    current_end
-                    if current_end
-                    and (previous_end is None or current_end > previous_end)
-                    else None
-                )
-                return {
-                    "success": False,
-                    "status": "failed",
-                    "last_backup": (
-                        completed_end.isoformat(timespec="seconds")
-                        if completed_end
-                        else None
-                    ),
-                    "error": f"Oxidized backup finished with status: {last_status}",
-                }
-            if current_end and (previous_end is None or current_end > previous_end):
+            if current_end and current_end != previous_end:
                 if _is_backup_failure_status(last_status):
                     return {
                         "success": False,
@@ -564,7 +533,11 @@ def trigger_oxidized_backup(node_name):
         return {
             "success": False,
             "status": "failed",
-            "error": "Oxidized backup did not complete within 30 seconds",
+            "last_backup": None,
+            "error": (
+                "Oxidized backup did not complete within 90 seconds"
+                + (f" (last status: {last_status})" if last_status else "")
+            ),
         }
     except requests.RequestException:
         print(f"Error triggering Oxidized backup for {node_name}")
