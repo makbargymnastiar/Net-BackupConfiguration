@@ -237,6 +237,16 @@ def test_manual_backup_timeout_returns_snapshot_time_for_consistency(monkeypatch
     assert result["last_backup"] == "2026-01-01T00:00:00+00:00"
 
 
+def test_backup_time_normalization_accepts_utc_and_epoch():
+    from routes.oxidized_api import _normalize_backup_time, _normalize_epoch
+
+    assert _normalize_backup_time("2026-01-01 00:00:00 UTC") == (
+        "2026-01-01T00:00:00+00:00"
+    )
+    assert _normalize_backup_time(1767225600) == "2026-01-01T00:00:00+00:00"
+    assert _normalize_epoch("2026-01-01T00:00:00Z") == 1767225600
+
+
 def test_manual_backup_failure_is_persisted(test_client_with_auth, monkeypatch, tmp_path):
     node = _create_node()
     monkeypatch.setattr(
@@ -255,6 +265,70 @@ def test_manual_backup_failure_is_persisted(test_client_with_auth, monkeypatch, 
     assert response.json["success"] is False
     assert response.json["status"] == "failed"
     assert Node.get_by_name(node.name).last_status == "failed"
+    assert response.json["activity_entry"]["status"] == "FAILED"
+
+
+def test_manual_poll_timeout_preserves_backup_time_and_logs_attempt_time(
+    test_client_with_auth, monkeypatch, tmp_path
+):
+    node = _create_node()
+    node.last_backup = "2026-11-19T10:00:00+00:00"
+    node.last_status = "success"
+    node.save()
+    monkeypatch.setattr(
+        activity_log_service, "ACTIVITY_LOG_FILE", str(tmp_path / "activity.log")
+    )
+    monkeypatch.setattr(
+        "routes.oxidized_api.trigger_oxidized_backup",
+        lambda _name: {
+            "success": False,
+            "status": "failed",
+            "failure_type": "polling_timeout",
+            "last_backup": "2026-11-19T10:00:00+00:00",
+            "error": "poll timed out",
+        },
+    )
+
+    response = test_client_with_auth.post(
+        f"/api/oxidized/node/{node.name}/backup"
+    )
+
+    saved_node = Node.get_by_name(node.name)
+    entry = activity_log_service.read_entries(limit=1)[0]
+    assert response.status_code == 504
+    assert response.json["failure_type"] == "polling_timeout"
+    assert response.json["status"] == "failed"
+    assert saved_node.last_backup == "2026-11-19T10:00:00+00:00"
+    assert saved_node.last_status == "failed"
+    assert entry["timestamp"] != saved_node.last_backup
+    assert entry["status"] == "FAILED"
+
+
+def test_manual_connection_failure_is_distinct_in_database_and_response(
+    test_client_with_auth, monkeypatch, tmp_path
+):
+    node = _create_node()
+    monkeypatch.setattr(
+        activity_log_service, "ACTIVITY_LOG_FILE", str(tmp_path / "activity.log")
+    )
+    monkeypatch.setattr(
+        "routes.oxidized_api.trigger_oxidized_backup",
+        lambda _name: {
+            "success": False,
+            "status": "failed",
+            "failure_type": "connection_failure",
+            "error": "authentication failed",
+        },
+    )
+
+    response = test_client_with_auth.post(
+        f"/api/oxidized/node/{node.name}/backup"
+    )
+
+    assert response.status_code == 502
+    assert response.json["status"] == "no_connection"
+    assert response.json["failure_type"] == "connection_failure"
+    assert Node.get_by_name(node.name).last_status == "no_connection"
     assert response.json["activity_entry"]["status"] == "FAILED"
 
 
@@ -289,6 +363,38 @@ def test_manual_backup_success_requires_valid_configuration(
     saved_node = Node.get_by_name(node.name)
     assert saved_node.last_status == "success"
     assert saved_node.last_backup == "2026-11-19T10:00:00+00:00"
+
+
+def test_manual_backup_with_no_git_diff_is_success(
+    test_client_with_auth, monkeypatch, tmp_path
+):
+    node = _create_node()
+    monkeypatch.setattr(
+        activity_log_service, "ACTIVITY_LOG_FILE", str(tmp_path / "activity.log")
+    )
+    monkeypatch.setattr(
+        "routes.oxidized_api._latest_backup_diff_stats",
+        lambda _name: {"added": 0, "removed": 0, "changed": 0},
+    )
+    monkeypatch.setattr(
+        "routes.oxidized_api.trigger_oxidized_backup",
+        lambda _name: {
+            "success": True,
+            "status": "success",
+            "last_backup": "2026-11-19T10:00:00+00:00",
+        },
+    )
+
+    response = test_client_with_auth.post(
+        f"/api/oxidized/node/{node.name}/backup"
+    )
+
+    assert response.status_code == 200
+    assert response.json["success"] is True
+    assert response.json["status"] == "success"
+    assert response.json["activity_entry"]["added"] == 0
+    assert response.json["activity_entry"]["removed"] == 0
+    assert response.json["activity_entry"]["changed"] == 0
 
 
 def test_scheduled_backup_result_is_validated_and_logged(
@@ -359,6 +465,84 @@ def test_scheduled_backup_with_empty_config_is_logged_as_failed(
     assert response.json[0]["status"] == "failed"
     assert Node.get_by_name(node.name).last_status == "failed"
     assert "FAILED" in activity_log.read_text(encoding="utf-8")
+
+
+def test_scheduled_dict_status_prefers_completion_and_avoids_duplicate_logs(
+    test_client_with_auth, monkeypatch, tmp_path
+):
+    node = _create_node()
+    activity_log = tmp_path / "activity.log"
+    monkeypatch.setattr(
+        activity_log_service, "ACTIVITY_LOG_FILE", str(activity_log)
+    )
+    monkeypatch.setattr(
+        "routes.oxidized_api.get_oxidized_nodes_status",
+        lambda: {
+            node.name: {
+                "status": "success",
+                "stats": {
+                    "last": {
+                        "end": "2026-11-19 04:01:00 UTC",
+                        "status": "no_connection",
+                    }
+                },
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "routes.oxidized_api.get_oxidized_config",
+        lambda _name: "hostname edge-router\n",
+    )
+
+    first_response = test_client_with_auth.get("/api/oxidized/status")
+    second_response = test_client_with_auth.get("/api/oxidized/status")
+
+    saved_node = Node.get_by_name(node.name)
+    log_entries = activity_log_service.read_entries(limit=10)
+    assert first_response.status_code == second_response.status_code == 200
+    assert first_response.json[node.name]["status"] == "no_connection"
+    assert second_response.json[node.name]["status"] == "no_connection"
+    assert saved_node.last_backup == "2026-11-19T04:01:00+00:00"
+    assert saved_node.last_status == "no_connection"
+    assert len(log_entries) == 1
+    assert log_entries[0]["status"] == "FAILED"
+
+
+def test_startup_status_sync_uses_scheduled_result_reconciliation(
+    monkeypatch, tmp_path
+):
+    import app as app_module
+
+    node = _create_node()
+    monkeypatch.setattr(
+        activity_log_service, "ACTIVITY_LOG_FILE", str(tmp_path / "activity.log")
+    )
+    monkeypatch.setattr(
+        app_module,
+        "get_oxidized_nodes_status",
+        lambda: [
+            {
+                "name": node.name,
+                "stats": {
+                    "last": {
+                        "end": "2026-11-19T04:00:00Z",
+                        "status": "success",
+                    }
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "routes.oxidized_api.get_oxidized_config",
+        lambda _name: "hostname edge-router\n",
+    )
+
+    app_module.sync_oxidized_status_to_database()
+
+    saved_node = Node.get_by_name(node.name)
+    assert saved_node.last_backup == "2026-11-19T04:00:00+00:00"
+    assert saved_node.last_status == "success"
+    assert activity_log_service.read_entries(limit=1)[0]["status"] == "SUCCESS"
 
 
 def test_status_refresh_preserves_manual_failure_without_new_completion(

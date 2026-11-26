@@ -14,6 +14,9 @@ from services.oxidized_service import (
     get_oxidized_version_history,
     get_oxidized_version_config,
     trigger_oxidized_backup,
+    _backup_last_status,
+    _parse_backup_time,
+    is_oxidized_connection_failure_status,
     is_valid_oxidized_config,
     read_oxidized_interval,
     write_oxidized_interval,
@@ -56,37 +59,14 @@ def _status_entries(status_data):
 
 
 def _normalize_backup_time(value):
-    if isinstance(value, dict):
-        value = value.get("end")
-    if not value:
-        return None
-    value = str(value).strip()
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
-    except ValueError:
-        return None
+    parsed = _parse_backup_time(value)
+    return parsed.isoformat(timespec="seconds") if parsed else None
 
 
 def _normalize_epoch(value):
     """Convert Unix or ISO timestamps to seconds; empty/invalid values are None."""
-    if value is None:
-        return None
-    value = str(value).strip()
-    if not value:
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
-            return int(parsed.timestamp())
-        except (ValueError, OverflowError, OSError):
-            return None
+    parsed = _parse_backup_time(value)
+    return int(parsed.timestamp()) if parsed else None
 
 
 def _compare_configurations(old_config, new_config):
@@ -311,90 +291,46 @@ def _record_scheduled_backup_results(status_data):
             continue
 
         stats = payload.get("stats") or {}
+        if not isinstance(stats, dict):
+            stats = {}
         last_data = stats.get("last") or payload.get("last") or {}
         completed_at = _normalize_backup_time(last_data)
-        status_value = payload.get("status") or stats.get("status")
-        if not status_value and isinstance(last_data, dict):
-            status_value = last_data.get("status", "")
-        status_value = str(status_value or "").lower()
+        status_value = _backup_last_status(payload)
 
         if completed_at and completed_at != _normalize_backup_time(node.last_backup):
-            config = get_oxidized_config(node_name)
-            has_explicit_failure = status_value in {
-                "failed",
-                "error",
-                "failure",
-                "no_connection",
-            } or any(
-                marker in status_value
-                for marker in (
-                    "authentication",
-                    "connection_error",
-                    "timeout",
-                    "refused",
-                    "failed",
-                )
+            is_connection_failure = is_oxidized_connection_failure_status(
+                status_value
+            )
+            config_is_valid = (
+                is_valid_oxidized_config(get_oxidized_config(node_name))
+                if status_value in {"success", "successful"}
+                else False
             )
             final_status = (
-                "SUCCESS"
-                if is_valid_oxidized_config(config)
-                and status_value in {"success", "successful"}
-                and not has_explicit_failure
-                else "FAILED"
+                "success"
+                if config_is_valid and not is_connection_failure
+                else "no_connection"
+                if is_connection_failure
+                else "failed"
             )
-            previous_backup = _normalize_backup_time(node.last_backup)
-            previous_status = node.last_status
             node.last_backup = completed_at
-            node.last_status = final_status.lower()
+            node.last_status = final_status
             node.save()
 
-            # A manual trigger records its completion locally before the next
-            # Oxidized poll. Reconcile that timestamp without duplicating its log.
-            previous_dt = None
-            current_dt = None
-            for raw, target in ((previous_backup, "previous"), (completed_at, "current")):
-                try:
-                    parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-                    if parsed.tzinfo is None:
-                        parsed = parsed.replace(tzinfo=timezone.utc)
-                    if target == "previous":
-                        previous_dt = parsed
-                    else:
-                        current_dt = parsed
-                except (AttributeError, ValueError):
-                    pass
-            is_recent_manual_result = (
-                previous_dt is not None
-                and current_dt is not None
-                and abs((current_dt - previous_dt).total_seconds()) <= 120
-                and previous_status == final_status.lower()
+            diff_stats = (
+                _latest_backup_diff_stats(node_name)
+                if final_status == "success"
+                else {}
             )
-            if not is_recent_manual_result:
-                diff_stats = (
-                    _latest_backup_diff_stats(node_name)
-                    if final_status == "SUCCESS"
-                    else {}
-                )
-                activity_log_service.append_entry(
-                    node_name,
-                    node.ip,
-                    final_status,
-                    insert=diff_stats.get("added"),
-                    delete=diff_stats.get("removed"),
-                    changed=diff_stats.get("changed"),
-                    timestamp=completed_at,
-                )
-            payload["status"] = node.last_status
-            continue
-
-        if node.last_backup:
-            # Keep the persisted result of the latest completed/manual backup.
-            # Oxidized may still expose stale status data without a new last.end.
-            payload["status"] = node.last_status
-            continue
-        if node.last_status == "failed" and not completed_at:
-            # A timed-out manual run with no previous completion time has no
-            # Oxidized timestamp to reconcile until the next run completes.
+            activity_log_service.append_entry(
+                node_name,
+                node.ip,
+                "SUCCESS" if final_status == "success" else "FAILED",
+                insert=diff_stats.get("added"),
+                delete=diff_stats.get("removed"),
+                changed=diff_stats.get("changed"),
+                timestamp=completed_at,
+            )
             payload["status"] = node.last_status
             continue
 
@@ -420,41 +356,30 @@ def _record_scheduled_backup_results(status_data):
             "error",
             "failure",
             "no_connection",
-        } or any(
-            marker in status_value
-            for marker in (
-                "authentication",
-                "connection_error",
-                "timeout",
-                "refused",
-                "failed",
+        } or is_oxidized_connection_failure_status(status_value)
+        if has_failed_status or has_error_message:
+            final_status = (
+                "no_connection"
+                if is_oxidized_connection_failure_status(status_value)
+                or any(
+                    marker in error_text
+                    for marker in (
+                        "connection refused",
+                        "timed out",
+                        "timeout",
+                        "authentication failed",
+                        "auth failed",
+                        "failed to connect",
+                        "unreachable",
+                    )
+                )
+                else "failed"
             )
-        )
-        is_initial_no_connection = (
-            status_value == "no_connection" and not node.last_backup
-        )
-        if (
-            (has_failed_status and not is_initial_no_connection) or has_error_message
-        ) and node.last_status != "failed":
-            node.last_status = "failed"
+            should_log_failure = node.last_status != final_status
+            node.last_status = final_status
             node.save()
-            activity_log_service.append_entry(
-                node_name, node.ip, "FAILED"
-            )
-        elif is_initial_no_connection:
-            node.last_status = "no_connection"
-            node.save()
-        elif status_value in {"success", "successful"} and node.last_status != "success":
-            config = get_oxidized_config(node_name)
-            node.last_status = (
-                "success" if is_valid_oxidized_config(config) else "failed"
-            )
-            node.save()
-            activity_log_service.append_entry(
-                node_name,
-                node.ip,
-                "SUCCESS" if node.last_status == "success" else "FAILED",
-            )
+            if should_log_failure:
+                activity_log_service.append_entry(node_name, node.ip, "FAILED")
         elif not node.last_backup and status_value in {"", "pending"}:
             node.last_status = "no_connection"
             node.save()
@@ -585,30 +510,56 @@ def oxidized_node_backup(node_name):
 
     result = trigger_oxidized_backup(node_name)
     if not result.get("success"):
-        node.last_status = "failed"
-        failed_at = result.get("last_backup") or datetime.now(
-            timezone.utc
-        ).isoformat(timespec="seconds")
-        if result.get("last_backup"):
-            node.last_backup = result["last_backup"]
+        result_status = result.get("status")
+        node.last_status = (
+            "no_connection"
+            if result_status == "no_connection"
+            or result.get("failure_type") == "connection_failure"
+            else "failed"
+        )
+        completed_at = _normalize_backup_time(result.get("last_backup"))
+        failure_type = result.get("failure_type")
+        if completed_at and failure_type != "polling_timeout":
+            node.last_backup = completed_at
+        failed_at = (
+            completed_at
+            if completed_at and failure_type != "polling_timeout"
+            else datetime.now(timezone.utc).isoformat(timespec="seconds")
+        )
         node.save()
         activity_entry = activity_log_service.append_entry(
             node_name, node.ip, "FAILED", timestamp=failed_at
         )
+        if failure_type in {"polling_timeout", "oxidized_request_timeout"}:
+            http_status = 504
+        elif (
+            result_status == "no_connection"
+            or failure_type
+            in {
+                "connection_failure",
+                "oxidized_error",
+                "oxidized_unavailable",
+                "status_unavailable",
+            }
+        ):
+            http_status = 502
+        else:
+            http_status = 500
         return jsonify(
             {
                 "success": False,
-                "status": "failed",
+                "status": node.last_status,
                 "last_backup": node.last_backup,
+                "failure_type": failure_type,
                 "activity_entry": activity_entry,
                 "error": result.get("error") or "Backup failed",
             }
-        ), 500
+        ), http_status
 
     node.last_status = "success"
-    node.last_backup = result.get("last_backup") or datetime.now(
-        timezone.utc
-    ).isoformat(timespec="seconds")
+    node.last_backup = _normalize_backup_time(result.get("last_backup")) or (
+        datetime.now(timezone.utc).isoformat(timespec="seconds")
+    )
     node.save()
     diff_stats = _latest_backup_diff_stats(node_name)
     activity_entry = activity_log_service.append_entry(

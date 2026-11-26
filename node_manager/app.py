@@ -422,24 +422,13 @@ def migrate_csv_to_database():
 def sync_oxidized_status_to_database():
     """
     Sync backup status from Oxidized API to local database.
-    This updates last_backup and last_status for all nodes.
+    Reuse the scheduled-result reconciler so startup sync handles the same
+    response shapes, timestamps, validation, and activity logging as polling.
     """
     oxidized_status = get_oxidized_nodes_status()
-    if not oxidized_status or not isinstance(oxidized_status, dict):
-        return
+    from routes.oxidized_api import _record_scheduled_backup_results
 
-    for node_name, status_data in oxidized_status.items():
-        node = Node.get_by_name(node_name)
-        if node:
-            # Get the latest stats
-            stats = status_data.get("stats", {})
-            last_sync = stats.get("last", {}).get("end")
-            if last_sync:
-                node.last_backup = last_sync
-                node.last_status = "success"
-            else:
-                node.last_status = "pending"
-            node.save()
+    _record_scheduled_backup_results(oxidized_status)
 
 
 # ==================== Oxidized API Integration ====================

@@ -63,45 +63,53 @@ def get_oxidized_nodes_status():
 
 
 def get_oxidized_config(node_name):
-    """Get node current config."""
-    try:
-        response = requests.get(
-            f"{OXIDIZED_API_URL}/node/fetch/{node_name}",
-            headers=_get_headers(),
-            timeout=10
-        )
-        if response.status_code == 200:
-            return response.text
-        return None
-    except Exception as e:
-        print(f"Error getting Oxidized config for {node_name}: {e}")
-        return None
+    """Get node current config (supports grouped and ungrouped nodes)."""
+    group_name = _node_group_name(node_name)
+    urls = []
+    if group_name:
+        urls.append(f"{OXIDIZED_API_URL}/node/fetch/{quote(str(group_name), safe='')}/{quote(str(node_name), safe='')}")
+    urls.append(f"{OXIDIZED_API_URL}/node/fetch/{quote(str(node_name), safe='')}")
+
+    for url in urls:
+        try:
+            response = requests.get(url, headers=_get_headers(), timeout=10)
+            if response.status_code == 200 and not _is_oxidized_error_message(response.text):
+                return response.text
+        except Exception as e:
+            print(f"Error getting Oxidized config from {url}: {e}")
+    return None
 
 
 def is_valid_oxidized_config(config):
-    """Reject missing, empty, or common Oxidized/device error responses."""
+    """Reject missing, empty, or standalone Oxidized/device error responses."""
     if not isinstance(config, str) or not config.strip():
         return False
-    content = config.strip().lower()
-    first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
+    lines = [line.strip().lower() for line in config.strip().splitlines() if line.strip()]
+    if not lines:
+        return False
+    first_line = lines[0]
     if first_line.startswith(
-        ("error", "failed", "node not found", "not found", "no config", "timeout")
+        ("error", "failed", "node not found", "not found", "no config", "timeout", "<!doctype", "<html")
     ):
         return False
-    error_markers = (
-        "node not found",
-        "no config",
-        "connection refused",
-        "connection timed out",
-        "connection timeout",
-        "authentication failed",
-        "authentication error",
-        "auth failed",
-        "unable to connect",
-        "failed to connect",
-        "no_connection",
-    )
-    return not any(marker in content for marker in error_markers)
+    if len(lines) <= 5:
+        joined = "\n".join(lines)
+        error_markers = (
+            "node not found",
+            "no config",
+            "connection refused",
+            "connection timed out",
+            "connection timeout",
+            "authentication failed",
+            "authentication error",
+            "auth failed",
+            "unable to connect",
+            "failed to connect",
+            "no_connection",
+        )
+        if any(marker in joined for marker in error_markers):
+            return False
+    return True
 
 
 def _is_oxidized_error_message(message):
@@ -416,11 +424,28 @@ def _backup_last_status(status):
     return str(value or "").strip().lower()
 
 
-def _is_backup_failure_status(status):
+def is_oxidized_connection_failure_status(status):
+    """Return whether Oxidized reports an unreachable/auth/timeout failure."""
     status = str(status or "").strip().lower()
     return any(
         marker in status
-        for marker in ("fail", "error", "no_connection", "timeout", "refused", "auth")
+        for marker in (
+            "no_connection",
+            "unreachable",
+            "timed out",
+            "timeout",
+            "refused",
+            "auth",
+            "connection",
+        )
+    )
+
+
+def _is_backup_failure_status(status):
+    status = str(status or "").strip().lower()
+    return is_oxidized_connection_failure_status(status) or any(
+        marker in status
+        for marker in ("fail", "error")
     )
 
 
@@ -437,11 +462,15 @@ def _parse_backup_time(value):
             try:
                 parsed = datetime.fromtimestamp(float(raw), tz=timezone.utc)
             except ValueError:
-                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if raw.endswith(" UTC"):
+                    raw = raw[:-4].strip() + "+00:00"
+                elif raw.endswith("Z"):
+                    raw = raw[:-1] + "+00:00"
+                parsed = datetime.fromisoformat(raw)
                 if parsed.tzinfo is None:
                     parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed.astimezone(timezone.utc)
-    except (ValueError, OverflowError, OSError):
+    except (TypeError, ValueError, OverflowError, OSError):
         return None
 
 
@@ -457,6 +486,7 @@ def trigger_oxidized_backup(node_name):
             return {
                 "success": False,
                 "status": "failed",
+                "failure_type": "status_unavailable",
                 "error": "Unable to read Oxidized node status before backup",
             }
         previous_end = _parse_backup_time(_backup_end_time(previous_status))
@@ -467,7 +497,12 @@ def trigger_oxidized_backup(node_name):
             timeout=30
         )
         if response.status_code != 200:
-            return {"success": False, "error": "Oxidized backup request failed"}
+            return {
+                "success": False,
+                "status": "failed",
+                "failure_type": "oxidized_error",
+                "error": f"Oxidized backup request returned HTTP {response.status_code}",
+            }
         try:
             result = response.json()
         except ValueError:
@@ -477,14 +512,62 @@ def trigger_oxidized_backup(node_name):
 
         if isinstance(result, dict):
             if result.get("error") or result.get("exception"):
-                return {"success": False, "error": "Oxidized backup failed"}
+                error_text = " ".join(
+                    str(result.get(key) or "")
+                    for key in ("error", "exception", "message")
+                )
+                failure_type = (
+                    "connection_failure"
+                    if is_oxidized_connection_failure_status(error_text)
+                    else "oxidized_error"
+                )
+                return {
+                    "success": False,
+                    "status": "failed",
+                    "failure_type": failure_type,
+                    "error": "Oxidized rejected the backup request",
+                }
             if result.get("success") is False or result.get("ok") is False:
-                return {"success": False, "error": "Oxidized backup failed"}
+                error_text = " ".join(
+                    str(result.get(key) or "")
+                    for key in ("error", "exception", "message")
+                )
+                failure_type = (
+                    "connection_failure"
+                    if is_oxidized_connection_failure_status(error_text)
+                    else "oxidized_error"
+                )
+                return {
+                    "success": False,
+                    "status": "failed",
+                    "failure_type": failure_type,
+                    "error": "Oxidized rejected the backup request",
+                }
             message = result.get("message")
             if message and _is_oxidized_error_message(str(message)):
-                return {"success": False, "error": "Oxidized backup failed"}
+                failure_type = (
+                    "connection_failure"
+                    if is_oxidized_connection_failure_status(message)
+                    else "oxidized_error"
+                )
+                return {
+                    "success": False,
+                    "status": "failed",
+                    "failure_type": failure_type,
+                    "error": "Oxidized returned an error for the backup request",
+                }
         elif isinstance(result, str) and _is_oxidized_error_message(result):
-            return {"success": False, "error": "Oxidized backup failed"}
+            failure_type = (
+                "connection_failure"
+                if is_oxidized_connection_failure_status(result)
+                else "oxidized_error"
+            )
+            return {
+                "success": False,
+                "status": "failed",
+                "failure_type": failure_type,
+                "error": "Oxidized returned an error for the backup request",
+            }
 
         deadline = time.monotonic() + (
             BACKUP_COMPLETION_POLL_ATTEMPTS
@@ -501,9 +584,17 @@ def trigger_oxidized_backup(node_name):
             last_status = _backup_last_status(current_status)
             if current_end and current_end != previous_end:
                 if _is_backup_failure_status(last_status):
+                    connection_failure = is_oxidized_connection_failure_status(
+                        last_status
+                    )
                     return {
                         "success": False,
                         "status": "failed",
+                        "failure_type": (
+                            "connection_failure"
+                            if connection_failure
+                            else "backup_failure"
+                        ),
                         "last_backup": current_end.isoformat(timespec="seconds"),
                         "error": f"Oxidized backup finished with status: {last_status}",
                     }
@@ -511,6 +602,7 @@ def trigger_oxidized_backup(node_name):
                     return {
                         "success": False,
                         "status": "failed",
+                        "failure_type": "invalid_status",
                         "last_backup": current_end.isoformat(timespec="seconds"),
                         "error": (
                             "Oxidized backup returned no successful final status"
@@ -526,6 +618,7 @@ def trigger_oxidized_backup(node_name):
                 return {
                     "success": False,
                     "status": "failed",
+                    "failure_type": "invalid_configuration",
                     "last_backup": current_end.isoformat(timespec="seconds"),
                     "error": "Oxidized backup returned no valid configuration",
                 }
@@ -539,6 +632,7 @@ def trigger_oxidized_backup(node_name):
         return {
             "success": False,
             "status": "failed",
+            "failure_type": "polling_timeout",
             "last_backup": (
                 previous_end.isoformat(timespec="seconds")
                 if previous_end
@@ -549,9 +643,30 @@ def trigger_oxidized_backup(node_name):
                 + (f" (last status: {last_status})" if last_status else "")
             ),
         }
+    except requests.Timeout:
+        print(f"Error triggering Oxidized backup for {node_name}")
+        return {
+            "success": False,
+            "status": "failed",
+            "failure_type": "oxidized_request_timeout",
+            "error": "Timed out while requesting a backup from Oxidized",
+        }
+    except requests.ConnectionError:
+        print(f"Error connecting to Oxidized for {node_name}")
+        return {
+            "success": False,
+            "status": "failed",
+            "failure_type": "oxidized_unavailable",
+            "error": "Unable to connect to Oxidized",
+        }
     except requests.RequestException:
         print(f"Error triggering Oxidized backup for {node_name}")
-        return {"success": False, "error": "Backup request failed"}
+        return {
+            "success": False,
+            "status": "failed",
+            "failure_type": "oxidized_error",
+            "error": "Backup request failed",
+        }
 
 
 def get_oxidized_info():
