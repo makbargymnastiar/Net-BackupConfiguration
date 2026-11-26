@@ -511,14 +511,55 @@ def oxidized_node_backup(node_name):
     result = trigger_oxidized_backup(node_name)
     if not result.get("success"):
         result_status = result.get("status")
+        failure_type = result.get("failure_type")
+        if result.get("pending") or failure_type == "polling_timeout":
+            node.last_status = "pending"
+            node.save()
+            return jsonify(
+                {
+                    "success": False,
+                    "status": node.last_status,
+                    "last_backup": node.last_backup,
+                    "failure_type": "polling_timeout",
+                    "activity_entry": None,
+                    "error": result.get("error") or "Backup is still pending in Oxidized",
+                }
+            ), 202
+
+        is_actual_backup_failure = (
+            result_status == "no_connection"
+            or failure_type
+            in {
+                "connection_failure",
+                "backup_failure",
+                "invalid_status",
+                "invalid_configuration",
+            }
+            or failure_type is None
+        )
+        if not is_actual_backup_failure:
+            http_status = 504 if failure_type in {
+                "oxidized_request_timeout",
+                "oxidized_unavailable",
+            } else 502
+            return jsonify(
+                {
+                    "success": False,
+                    "status": node.last_status,
+                    "last_backup": node.last_backup,
+                    "failure_type": failure_type,
+                    "activity_entry": None,
+                    "error": result.get("error") or "Oxidized request failed",
+                }
+            ), http_status
+
         node.last_status = (
             "no_connection"
             if result_status == "no_connection"
-            or result.get("failure_type") == "connection_failure"
+            or failure_type == "connection_failure"
             else "failed"
         )
         completed_at = _normalize_backup_time(result.get("last_backup"))
-        failure_type = result.get("failure_type")
         if completed_at and failure_type != "polling_timeout":
             node.last_backup = completed_at
         failed_at = (
@@ -530,16 +571,11 @@ def oxidized_node_backup(node_name):
         activity_entry = activity_log_service.append_entry(
             node_name, node.ip, "FAILED", timestamp=failed_at
         )
-        if failure_type in {"polling_timeout", "oxidized_request_timeout"}:
-            http_status = 504
-        elif (
+        if (
             result_status == "no_connection"
             or failure_type
             in {
                 "connection_failure",
-                "oxidized_error",
-                "oxidized_unavailable",
-                "status_unavailable",
             }
         ):
             http_status = 502

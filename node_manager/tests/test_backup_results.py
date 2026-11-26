@@ -166,6 +166,39 @@ def test_manual_backup_reports_new_oxidized_failure_status(monkeypatch):
     assert "no_connection" in result["error"]
 
 
+def test_manual_backup_reports_no_connection_transition_without_timestamp(monkeypatch):
+    class OxidizedResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {}
+
+    statuses = iter(
+        [
+            {"stats": {"last": {"end": "2026-01-01T00:00:00Z", "status": "success"}}},
+            {"stats": {"last": {"status": "no_connection"}}},
+        ]
+    )
+    monkeypatch.setattr(
+        oxidized_service.requests,
+        "get",
+        lambda *_args, **_kwargs: OxidizedResponse(),
+    )
+    monkeypatch.setattr(
+        oxidized_service,
+        "get_oxidized_node_status",
+        lambda _name, **_kwargs: next(statuses),
+    )
+    monkeypatch.setattr(oxidized_service, "BACKUP_COMPLETION_POLL_ATTEMPTS", 2)
+
+    result = oxidized_service.trigger_oxidized_backup("edge-router")
+
+    assert result["success"] is False
+    assert result["failure_type"] == "connection_failure"
+    assert "no_connection" in result["error"]
+
+
 def test_manual_backup_waits_for_new_end_before_using_failure_status(monkeypatch):
     class OxidizedResponse:
         status_code = 200
@@ -215,6 +248,7 @@ def test_manual_backup_timeout_returns_snapshot_time_for_consistency(monkeypatch
             {"stats": {"last": {"end": "2026-01-01T00:00:00Z", "status": "success"}}},
             {"stats": {"last": {"end": "2026-01-01T00:00:00Z", "status": "no_connection"}}},
             {"stats": {"last": {"end": "2026-01-01T00:00:00Z", "status": "no_connection"}}},
+            {"stats": {"last": {"end": "2026-01-01T00:00:00Z", "status": "no_connection"}}},
         ]
     )
     monkeypatch.setattr(
@@ -233,8 +267,75 @@ def test_manual_backup_timeout_returns_snapshot_time_for_consistency(monkeypatch
     result = oxidized_service.trigger_oxidized_backup("edge-router")
 
     assert result["success"] is False
-    assert result["status"] == "failed"
+    assert result["status"] == "pending"
+    assert result["failure_type"] == "polling_timeout"
+    assert result["pending"] is True
     assert result["last_backup"] == "2026-01-01T00:00:00+00:00"
+
+
+def test_manual_backup_final_status_success_wins_without_config_fetch(monkeypatch):
+    class OxidizedResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {}
+
+    statuses = iter(
+        [
+            {
+                "stats": {
+                    "last": {
+                        "end": "2026-01-01T00:00:00Z",
+                        "status": "success",
+                    }
+                }
+            },
+            {
+                "status": "running",
+                "stats": {
+                    "last": {
+                        "end": "2026-01-01T00:00:00Z",
+                        "status": "success",
+                    }
+                },
+            },
+            {
+                "status": "success",
+                "stats": {
+                    "last": {
+                        "end": "2026-01-01T00:00:01Z",
+                        "status": "success",
+                    }
+                },
+            },
+        ]
+    )
+    monkeypatch.setattr(
+        oxidized_service.requests,
+        "get",
+        lambda *_args, **_kwargs: OxidizedResponse(),
+    )
+    monkeypatch.setattr(
+        oxidized_service,
+        "get_oxidized_node_status",
+        lambda _name, **_kwargs: next(statuses),
+    )
+    monkeypatch.setattr(
+        oxidized_service,
+        "get_oxidized_config",
+        lambda _name: "Connection refused",
+    )
+    monkeypatch.setattr(oxidized_service.time, "sleep", lambda *_args: None)
+    monkeypatch.setattr(oxidized_service, "BACKUP_COMPLETION_POLL_ATTEMPTS", 1)
+
+    result = oxidized_service.trigger_oxidized_backup("edge-router")
+
+    assert result == {
+        "success": True,
+        "status": "success",
+        "last_backup": "2026-01-01T00:00:01+00:00",
+    }
 
 
 def test_backup_time_normalization_accepts_utc_and_epoch():
@@ -268,7 +369,7 @@ def test_manual_backup_failure_is_persisted(test_client_with_auth, monkeypatch, 
     assert response.json["activity_entry"]["status"] == "FAILED"
 
 
-def test_manual_poll_timeout_preserves_backup_time_and_logs_attempt_time(
+def test_manual_poll_timeout_preserves_backup_time_without_failed_activity(
     test_client_with_auth, monkeypatch, tmp_path
 ):
     node = _create_node()
@@ -294,14 +395,14 @@ def test_manual_poll_timeout_preserves_backup_time_and_logs_attempt_time(
     )
 
     saved_node = Node.get_by_name(node.name)
-    entry = activity_log_service.read_entries(limit=1)[0]
-    assert response.status_code == 504
+    entries = activity_log_service.read_entries(limit=10)
+    assert response.status_code == 202
     assert response.json["failure_type"] == "polling_timeout"
-    assert response.json["status"] == "failed"
+    assert response.json["status"] == "pending"
     assert saved_node.last_backup == "2026-11-19T10:00:00+00:00"
-    assert saved_node.last_status == "failed"
-    assert entry["timestamp"] != saved_node.last_backup
-    assert entry["status"] == "FAILED"
+    assert saved_node.last_status == "pending"
+    assert response.json["activity_entry"] is None
+    assert entries == []
 
 
 def test_manual_connection_failure_is_distinct_in_database_and_response(
